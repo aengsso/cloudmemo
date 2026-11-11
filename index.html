@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>클라우드 메모</title>
+<!--WEB-ONLY-START-->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="메모">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
+<!--WEB-ONLY-END-->
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" class="show-list">
+  <aside id="sidebar">
+    <header class="side-head">
+      <h1>메모</h1>
+      <button id="btn-new" class="icon-btn" title="새 메모 (Ctrl+N)" aria-label="새 메모">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+      </button>
+    </header>
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="검색" autocomplete="off">
+    </div>
+    <ul id="list" role="listbox" aria-label="메모 목록"></ul>
+    <footer id="sync-bar">
+      <span id="sync-dot"></span>
+      <span id="sync-text">…</span>
+      <button id="btn-sync" class="text-btn" hidden>지금 동기화</button>
+      <button id="btn-login" class="text-btn primary" hidden>구글 드라이브 연결</button>
+      <button id="btn-logout" class="text-btn" hidden>연결 해제</button>
+    </footer>
+  </aside>
+  <main id="editor-pane">
+    <header class="editor-head">
+      <button id="btn-back" class="icon-btn back" aria-label="목록으로">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+      <span id="editor-meta"></span>
+      <button id="btn-delete" class="icon-btn" title="삭제" aria-label="삭제">
+        <svg viewBox="0 0 24 24" width="19" height="19"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+    </header>
+    <textarea id="editor" spellcheck="false" placeholder="첫 줄이 제목이 돼."></textarea>
+    <div id="empty-state">메모를 선택하거나 새로 만들어.</div>
+  </main>
+</div>
+<!--WEB-ONLY-START-->
+<script src="config.js"></script>
+<script src="api-web.js"></script>
+<!--WEB-ONLY-END-->
+<script src="app.js"></script>
+</body>
+</html>
