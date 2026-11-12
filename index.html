@@ -29,6 +29,7 @@
     <div class="search-wrap">
       <input id="search" type="search" placeholder="검색" autocomplete="off">
     </div>
+    <div id="folders" role="tablist" aria-label="폴더"></div>
     <ul id="list" role="listbox" aria-label="메모 목록"></ul>
     <footer id="sync-bar">
       <span id="sync-dot"></span>
@@ -39,16 +40,16 @@
     </footer>
   </aside>
   <main id="editor-pane">
-    <header class="editor-head">
+    <header class="editor-head" id="editor-head">
       <button id="btn-back" class="icon-btn back" aria-label="목록으로">
         <svg viewBox="0 0 24 24" width="22" height="22"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
       </button>
       <span id="editor-meta"></span>
-      <button id="btn-font" class="icon-btn" title="글자 크기" aria-label="글자 크기">
-        <svg viewBox="0 0 24 24" width="21" height="21"><path d="M3 19l5-13 5 13M4.8 14.5h6.4M14.5 19l3.5-9 3.5 9M15.6 16.3h4.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      <button id="btn-folder" class="icon-btn" title="폴더로 옮기기" aria-label="폴더로 옮기기">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2 2.2h7.2a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
       </button>
-      <button id="btn-check" class="icon-btn" title="체크리스트 (Ctrl+Shift+L)" aria-label="체크리스트">
-        <svg viewBox="0 0 24 24" width="20" height="20"><rect x="3.5" y="3.5" width="17" height="17" rx="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8 12.2l2.7 2.7L16 9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      <button id="btn-font" class="icon-btn" title="화면 글자 크기 (이 기기)" aria-label="화면 글자 크기">
+        <svg viewBox="0 0 24 24" width="21" height="21"><path d="M3 19l5-13 5 13M4.8 14.5h6.4M14.5 19l3.5-9 3.5 9M15.6 16.3h4.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
       </button>
       <button id="btn-pin" class="icon-btn" title="고정" aria-label="고정" aria-pressed="false">
         <svg viewBox="0 0 24 24" width="20" height="20"><path d="M9 3.5h6l-1 6 3.5 3.5v1.5h-11V13L10 9.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 14.5V21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
@@ -57,10 +58,31 @@
         <svg viewBox="0 0 24 24" width="19" height="19"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
       </button>
     </header>
-    <textarea id="editor" spellcheck="false" placeholder="첫 줄이 제목이 돼."></textarea>
+    <div id="fmt-bar" role="toolbar" aria-label="서식">
+      <button id="f-size" class="fmt wide" title="글자 크기 (선택한 부분)" aria-label="글자 크기" aria-haspopup="menu">
+        <span class="size-ico">가<small>가</small></span>
+        <svg viewBox="0 0 24 24" width="12" height="12"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+      <button id="f-bold" class="fmt" title="굵게 (Ctrl+B)" aria-label="굵게" aria-pressed="false"><b>B</b></button>
+      <button id="f-italic" class="fmt" title="기울임 (Ctrl+I)" aria-label="기울임" aria-pressed="false"><i class="ital">I</i></button>
+      <button id="f-under" class="fmt" title="밑줄 (Ctrl+U)" aria-label="밑줄" aria-pressed="false"><u>U</u></button>
+      <button id="f-color" class="fmt wide" title="글자 색" aria-label="글자 색" aria-haspopup="menu">
+        <span class="color-ico">A<i id="color-bar"></i></span>
+        <svg viewBox="0 0 24 24" width="12" height="12"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+      <button id="f-clear" class="fmt" title="서식 지우기" aria-label="서식 지우기">
+        <svg viewBox="0 0 24 24" width="19" height="19"><path d="M5 6h11M10.5 6l-3 13M14 14l6 6M20 14l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
+      </button>
+      <span class="sep"></span>
+      <button id="btn-check" class="fmt" title="체크리스트 (Ctrl+Shift+L)" aria-label="체크리스트">
+        <svg viewBox="0 0 24 24" width="19" height="19"><rect x="3.5" y="3.5" width="17" height="17" rx="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8 12.2l2.7 2.7L16 9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+    </div>
+    <div id="editor" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="메모 내용"></div>
     <div id="empty-state">메모를 선택하거나 새로 만들어.</div>
   </main>
 </div>
+<div id="menu" role="menu" hidden></div>
 <!--WEB-ONLY-START-->
 <script src="config.js"></script>
 <script src="api-web.js"></script>

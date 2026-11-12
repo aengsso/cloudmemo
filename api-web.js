@@ -20,20 +20,38 @@
   let syncing = false, lastSync = 0, lastError = "", folderId = "", syncTimer = null;
   const persist = () => ls.set(K.memos, memos);
   const emit = (ev) => window.__cmEvent && window.__cmEvent(ev);
-  const dto = (m) => ({ id: m.id, body: m.body, updated: m.updated, pinned: !!m.pinned });
+  const dto = (m) => ({ id: m.id, body: m.body, updated: m.updated, pinned: !!m.pinned, folder: m.folder || "" });
   const bump = (prev) => Math.max(Date.now(), (prev || 0) + 1);
   function newId() {
     const b = new Uint8Array(12); crypto.getRandomValues(b);
     return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
   }
+  // Formatted memos are HTML starting with this marker; plain memos stay plain text (see remote.go).
+  const HTML_MARKER = "<!--cloudmemo-html-->";
+  const isHTML = (body) => body.startsWith(HTML_MARKER);
+  const ENT = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'" };
+  function plainOf(body) { // same rules as PlainText in remote.go
+    if (!isHTML(body)) return body;
+    return body.slice(HTML_MARKER.length)
+      .replace(/<br\s*\/?>|<\/(div|p|li|h[1-6])>/gi, "\n")
+      .replace(/<!--[\s\S]*?-->|<[^>]*>/g, "")
+      .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (m, e) => {
+        if (e[0] === "#") return String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : +e.slice(1));
+        return ENT[e.toLowerCase()] ?? m;
+      })
+      .replace(/ /g, " ");
+  }
+  const conflictBody = (body) => isHTML(body)
+    ? HTML_MARKER + "<div>[충돌]</div>" + body.slice(HTML_MARKER.length) : "[충돌] " + body;
+  const cleanFolder = (f) => Array.from(String(f || "").trim()).slice(0, 30).join("");
   function titleOf(body) {
-    for (const line of body.split("\n")) {
+    for (const line of plainOf(body).split("\n")) {
       const t = line.replace(/^[☐☑]+/, "").trim(); // same as TitleOf in remote.go
       if (t) return Array.from(t).slice(0, 40).join("");
     }
     return "제목 없음";
   }
-  const fileNameOf = (body) => titleOf(body).replace(/[\/\\:*?"<>|]/g, "_") + ".txt";
+  const fileNameOf = (body) => titleOf(body).replace(/[\/\\:*?"<>|]/g, "_") + (isHTML(body) ? ".html" : ".txt");
 
   // ---------- auth (OAuth implicit flow via full-page redirect; popups are unreliable in iOS home-screen apps) ----------
   const redirectUri = () => new URL(".", location.href).href;
@@ -91,16 +109,18 @@
   }
   const toRemote = (f) => {
     const p = f.appProperties || {};
-    return { id: f.id, memoId: p.memoId || "", name: f.name, modified: f.modifiedTime, pinned: p.pinned === "1" };
+    return { id: f.id, memoId: p.memoId || "", name: f.name, modified: f.modifiedTime,
+             pinned: p.pinned === "1", folder: p.folder || "" };
   };
-  // Same as memoProps in remote.go: always send both keys.
-  const memoProps = (memoId, pinned) => ({ memoId, pinned: pinned ? "1" : "0" });
+  // Same as memoProps in remote.go: always send every key.
+  const memoProps = (memoId, meta) => ({ memoId, pinned: meta.pinned ? "1" : "0", folder: meta.folder || "" });
+  const mimeOf = (body) => (isHTML(body) ? "text/html" : "text/plain");
   function multipart(meta, body) {
     const b = "cm" + newId();
     return {
       headers: { "Content-Type": "multipart/related; boundary=" + b },
       body: `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n` +
-            `--${b}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n${body}\r\n--${b}--`,
+            `--${b}\r\nContent-Type: ${mimeOf(body)}; charset=UTF-8\r\n\r\n${body}\r\n--${b}--`,
     };
   }
   const remote = {
@@ -135,14 +155,14 @@
       const s = await (await gfetch(`${API}/files/${id}?alt=media`)).text();
       return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
     },
-    async create(memoId, name, body, pinned) {
+    async create(memoId, name, body, mm) {
       const { id } = await this.folder();
-      const meta = { name, mimeType: "text/plain", parents: [id], appProperties: memoProps(memoId, pinned) };
+      const meta = { name, mimeType: mimeOf(body), parents: [id], appProperties: memoProps(memoId, mm) };
       return toRemote(await (await gfetch(`${UPLOAD}/files?uploadType=multipart&fields=${FILE_FIELDS}`,
         { method: "POST", ...multipart(meta, body) })).json());
     },
-    async update(fileId, memoId, name, body, pinned) {
-      const meta = { name, appProperties: memoProps(memoId, pinned) };
+    async update(fileId, memoId, name, body, mm) {
+      const meta = { name, mimeType: mimeOf(body), appProperties: memoProps(memoId, mm) };
       return toRemote(await (await gfetch(`${UPLOAD}/files/${fileId}?uploadType=multipart&fields=${FILE_FIELDS}`,
         { method: "PATCH", ...multipart(meta, body) })).json());
     },
@@ -168,13 +188,13 @@
     const m = memos[l.id];
     if (!m || m.updated !== l.updated || m.deleted) return; // edited during download; next round
     const t = Date.parse(r.modified) || Date.now();
-    Object.assign(m, { body, pinned: r.pinned, updated: t, remoteId: r.id, remoteModified: r.modified, syncedAt: t });
+    Object.assign(m, { body, pinned: r.pinned, folder: r.folder, updated: t, remoteId: r.id, remoteModified: r.modified, syncedAt: t });
     persist();
   }
   async function push(l, fileId) {
     const name = fileNameOf(l.body);
-    const pinned = !!l.pinned;
-    const r = fileId ? await remote.update(fileId, l.id, name, l.body, pinned) : await remote.create(l.id, name, l.body, pinned);
+    const mm = { pinned: !!l.pinned, folder: l.folder || "" };
+    const r = fileId ? await remote.update(fileId, l.id, name, l.body, mm) : await remote.create(l.id, name, l.body, mm);
     const m = memos[l.id];
     if (!m) return;
     Object.assign(m, { remoteId: r.id, remoteModified: r.modified, syncedAt: l.updated });
@@ -202,7 +222,7 @@
         const body = await remote.download(r.id);
         const t = Date.parse(r.modified) || Date.now();
         if (!memos[memoId]) {
-          memos[memoId] = { id: memoId, body, pinned: r.pinned, created: t, updated: t, remoteId: r.id, remoteModified: r.modified, syncedAt: t };
+          memos[memoId] = { id: memoId, body, pinned: r.pinned, folder: r.folder, created: t, updated: t, remoteId: r.id, remoteModified: r.modified, syncedAt: t };
           persist();
         }
         continue;
@@ -220,7 +240,7 @@
       const body = await remote.download(r.id);
       if (body !== l.body) {
         const t = Date.now(), id = newId();
-        memos[id] = { id, body: "[충돌] " + l.body, created: t, updated: t };
+        memos[id] = { id, body: conflictBody(l.body), folder: l.folder || "", created: t, updated: t };
         persist();
       }
       applyRemote(l, r, body);
@@ -234,7 +254,7 @@
       } else if (l.remoteId && !fresh) {
         if (l.updated > (l.syncedAt || 0)) await push(l, "");
         else if (m && m.updated === l.updated) { delete memos[id]; persist(); }
-      } else if (l.body.trim()) {
+      } else if (plainOf(l.body).trim()) {
         await push(l, "");
       }
     }
@@ -273,8 +293,8 @@
       return Object.values(memos).filter((m) => !m.deleted)
         .sort((a, b) => (!!b.pinned - !!a.pinned) || b.updated - a.updated).map(dto);
     },
-    async create() {
-      const t = Date.now(), m = { id: newId(), body: "", created: t, updated: t };
+    async create(folder) {
+      const t = Date.now(), m = { id: newId(), body: "", folder: cleanFolder(folder), created: t, updated: t };
       memos[m.id] = m; persist();
       return dto(m);
     },
@@ -288,6 +308,13 @@
       const m = memos[id];
       if (!m || m.deleted) throw new Error("메모를 찾을 수 없음");
       if (!!m.pinned !== !!pinned) { m.pinned = !!pinned; m.updated = bump(m.updated); persist(); requestSync(1000); }
+      return dto(m);
+    },
+    async setFolder(id, folder) {
+      const m = memos[id];
+      if (!m || m.deleted) throw new Error("메모를 찾을 수 없음");
+      folder = cleanFolder(folder);
+      if ((m.folder || "") !== folder) { m.folder = folder; m.updated = bump(m.updated); persist(); requestSync(1000); }
       return dto(m);
     },
     async remove(id) {
