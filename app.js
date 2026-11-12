@@ -101,8 +101,28 @@
     if (m) v = "#" + m.slice(1, 4).map((x) => (+x).toString(16).padStart(2, "0")).join("");
     return COLOR_SET.has(v) ? v : "";
   }
+  // Highlighter: translucent backgrounds (the browser writes <span style="background-color">),
+  // so the text under them stays readable in both light and dark themes.
+  const HIGHLIGHTS = [
+    { v: "rgba(255, 212, 0, 0.4)", n: "노랑" },
+    { v: "rgba(64, 192, 87, 0.3)", n: "초록" },
+    { v: "rgba(240, 101, 149, 0.3)", n: "분홍" },
+    { v: "rgba(77, 171, 247, 0.3)", n: "파랑" },
+  ];
+  const rgba = (s) => {
+    const m = String(s || "").match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)/);
+    return m && [+m[1], +m[2], +m[3], m[4] == null ? 1 : +m[4]];
+  };
+  // Canonical highlight value for an element's background, or "" if it isn't one of ours.
+  function normHighlight(bg) {
+    const c = rgba(bg);
+    if (!c) return "";
+    const h = HIGHLIGHTS.find((x) => { const p = rgba(x.v); return p[0] === c[0] && p[1] === c[1] && p[2] === c[2] && Math.abs(p[3] - c[3]) < 0.03; });
+    return h ? h.v : "";
+  }
   // Only these tags/attributes survive; everything else is unwrapped or dropped.
-  const TAGS = { B: "B", STRONG: "B", I: "I", EM: "I", U: "U", FONT: "FONT", BR: "BR", HR: "HR", DIV: "DIV", P: "DIV",
+  const TAGS = { B: "B", STRONG: "B", I: "I", EM: "I", U: "U", FONT: "FONT", SPAN: "SPAN", MARK: "SPAN",
+                 BR: "BR", HR: "HR", DIV: "DIV", P: "DIV",
                  LI: "DIV", H1: "DIV", H2: "DIV", H3: "DIV", H4: "DIV", H5: "DIV", H6: "DIV", BLOCKQUOTE: "DIV", PRE: "DIV" };
   const DROP = new Set(["SCRIPT", "STYLE", "TEMPLATE", "IFRAME", "OBJECT", "EMBED", "SVG", "MATH", "IMG", "VIDEO",
                         "AUDIO", "CANVAS", "INPUT", "TEXTAREA", "SELECT", "BUTTON", "HEAD", "TITLE", "META", "LINK"]);
@@ -120,6 +140,11 @@
         if (/^[1-7]$/.test(s || "")) el.setAttribute("size", s);
         if (!el.attributes.length) { cleanInto(n, dst); continue; }
       }
+      if (tag === "SPAN") { // only highlighter spans survive (<mark> from other pages → yellow)
+        const h = n.nodeName === "MARK" ? HIGHLIGHTS[0].v : normHighlight(n.style && n.style.backgroundColor);
+        if (!h) { cleanInto(n, dst); continue; }
+        el.style.backgroundColor = h;
+      }
       if (tag !== "BR" && tag !== "HR") cleanInto(n, el);
       dst.appendChild(el);
     }
@@ -136,9 +161,11 @@
     if (!root.firstChild) root.appendChild(Object.assign(document.createElement("div"), { innerHTML: "<br>" }));
   }
 
-  const RICH = "b,i,u,font,strong,em,hr";
+  const RICH = "b,i,u,font,strong,em,hr,mark";
+  const hasRich = (root) => !!root.querySelector(RICH) ||
+    [...root.querySelectorAll("span[style]")].some((s) => normHighlight(s.style.backgroundColor));
   function serialize() {
-    if (!editor.querySelector(RICH)) return linesOf(editor).join("\n");
+    if (!hasRich(editor)) return linesOf(editor).join("\n");
     const box = document.createElement("div");
     cleanInto(editor, box);
     return HTML_MARKER + box.innerHTML;
@@ -566,6 +593,16 @@
       html: `<span class="size-s${s.v}">${s.n}</span>`, checked: cur === s.v, onPick: () => fmt("fontSize", s.v),
     })));
   }
+  function highlightMenu(anchor) {
+    openMenu(anchor, [
+      ...HIGHLIGHTS.map((h) => ({
+        html: `<i class="sw hl" style="background:${h.v}"></i>${h.n}`,
+        onPick: () => { fmt("hiliteColor", h.v); $("hl-bar").style.background = h.v; },
+      })),
+      "-",
+      { html: `<i class="sw none"></i>형광펜 지우기`, onPick: () => fmt("hiliteColor", "transparent") },
+    ]);
+  }
   let lastColor = COLORS[1];
   function colorMenu(anchor) {
     openMenu(anchor, COLORS.map((c) => ({
@@ -967,7 +1004,7 @@
       blanks.forEach((n) => n.remove());
       const box = document.createElement("div");
       cleanInto(tpl.content, box);
-      if (box.querySelector(RICH)) {
+      if (hasRich(box)) {
         run(() => document.execCommand("insertHTML", false, box.innerHTML));
         afterEdit();
         return;
@@ -992,6 +1029,7 @@
   $("btn-check").onclick = toggleChecklist;
   $("f-size").onclick = (e) => sizeMenu(e.currentTarget);
   $("f-color").onclick = (e) => colorMenu(e.currentTarget);
+  $("f-hl").onclick = (e) => highlightMenu(e.currentTarget);
   $("f-bold").onclick = () => fmt("bold");
   $("f-italic").onclick = () => fmt("italic");
   $("f-under").onclick = () => fmt("underline");

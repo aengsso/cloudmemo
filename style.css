@@ -155,6 +155,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .size-ico small { font-size: 11px; margin-left: 1px; }
 .color-ico { position: relative; font-weight: 600; padding-bottom: 3px; }
 .color-ico i { position: absolute; left: -2px; right: -2px; bottom: 0; height: 3px; border-radius: 2px; background: var(--c-red); }
+.hl-ico { position: relative; display: inline-flex; padding-bottom: 3px; }
+.hl-ico svg { opacity: 1; }
+.hl-ico i { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; border-radius: 2px; background: rgba(255, 212, 0, .75); }
+#menu .sw.hl { border-color: transparent; }
+#menu .sw.none { background: linear-gradient(135deg, transparent 45%, var(--warn) 45%, var(--warn) 55%, transparent 55%); }
 #fmt-bar .sep { flex: none; width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
 
 #editor {
@@ -168,8 +173,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 }
 /* Divider: clearly visible but thin */
 #editor hr {
-  border: 0; height: 2px; margin: 16px 0; border-radius: 1px;
-  background: var(--text); opacity: .55;
+  border: 0; height: 1px; margin: 16px 0;
+  background: var(--text); opacity: .5;
 }
 #editor.empty > div:first-child::before {
   content: "첫 줄이 제목이 돼."; color: var(--muted); position: absolute; pointer-events: none;
