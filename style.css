@@ -84,8 +84,19 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .02em;
 }
 #list .s i { font-style: normal; color: var(--accent); margin-right: 6px; }
-#list .s em { font-style: normal; color: var(--text); opacity: .7; margin-right: 6px; }
-#list .s em::before { content: "▸ "; opacity: .6; }
+/* Folder tag: a filled pill so it doesn't run into the snippet text. */
+#list .s em {
+  font-style: normal; font-size: 11px; font-weight: 600; color: var(--text);
+  background: var(--sel); border-radius: 4px; padding: 1px 6px; margin-right: 6px;
+  display: inline-block; vertical-align: 1px; max-width: 8em; overflow: hidden; text-overflow: ellipsis;
+}
+#list li.active .s em { background: var(--panel); }
+#list li.unreadable { opacity: .55; }
+#list li.locked { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 0; }
+#list li.locked p { margin: 0; }
+#list li.locked svg { width: 28px; height: 28px; opacity: .6; }
+#list li.locked .text-btn { font-size: 14px; padding: 7px 14px; }
+.chip svg { vertical-align: -1px; margin-right: 4px; }
 
 #folders { display: flex; gap: 6px; padding: 0 14px 10px; overflow-x: auto; scrollbar-width: none; }
 #folders::-webkit-scrollbar { display: none; }
@@ -155,6 +166,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   white-space: pre-wrap; overflow-wrap: anywhere;
   -webkit-tap-highlight-color: transparent;
 }
+/* "엄청 큰" divider */
+#editor hr {
+  border: 0; height: 5px; margin: 18px 0; border-radius: 3px;
+  background: var(--text); opacity: .8;
+}
 #editor.empty > div:first-child::before {
   content: "첫 줄이 제목이 돼."; color: var(--muted); position: absolute; pointer-events: none;
 }
@@ -194,6 +210,28 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 #menu .size-s3 { font-size: 15px; }
 #menu .size-s5 { font-size: 19px; }
 #menu .size-s6 { font-size: 23px; }
+
+#modal {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px;
+  background: rgba(0, 0, 0, .35);
+}
+#modal[hidden] { display: none; }
+.sheet {
+  width: min(360px, 100%); background: var(--panel); color: var(--text);
+  border-radius: 14px; padding: 20px; box-shadow: 0 16px 40px rgba(0, 0, 0, .25);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.sheet h2 { font-size: 17px; margin: 0; }
+.sheet p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.sheet input {
+  font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text); outline: none;
+}
+.sheet input:focus { border-color: var(--accent); }
+.sheet input[hidden] { display: none; }
+#pw-err { color: var(--warn); min-height: 1em; }
+.sheet-btns { display: flex; justify-content: flex-end; gap: 8px; }
+.sheet-btns .text-btn { font-size: 14px; padding: 7px 14px; }
 
 #empty-state { position: absolute; inset: 0; display: none; place-items: center; color: var(--muted); }
 #app.no-memo #editor, #app.no-memo #fmt-bar, #app.no-memo .editor-head > :not(.back) { visibility: hidden; }

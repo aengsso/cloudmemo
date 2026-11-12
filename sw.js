@@ -1,5 +1,5 @@
 // Caches the app shell so the memo app opens offline. Bump VERSION when files change.
-const VERSION = "cloudmemo-v3";
+const VERSION = "cloudmemo-v4";
 const SHELL = ["./", "index.html", "style.css", "app.js", "api-web.js", "config.js",
                "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png"];
 

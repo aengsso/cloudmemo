@@ -30,7 +30,48 @@
   const HTML_MARKER = "<!--cloudmemo-html-->";
   const isHTML = (body) => body.startsWith(HTML_MARKER);
   const ENT = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'" };
+  // Secret-folder memos: same format as crypt.go (AES-256-GCM, PBKDF2-SHA256).
+  const LOCK_MARKER = "<!--cloudmemo-locked-->", LOCK_ITER = 200000, LOCKED_TITLE = "잠긴 메모";
+  const isLocked = (body) => body.startsWith(LOCK_MARKER);
+  function b64e(u8) {
+    let s = "";
+    for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function b64d(s) {
+    s = s.replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) s += "=";
+    return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  }
+  const keyCache = new Map();
+  async function lockKey(pw, salt) {
+    const ck = pw + "\u0000" + b64e(salt);
+    if (!keyCache.has(ck)) {
+      const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
+      keyCache.set(ck, await crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: LOCK_ITER, hash: "SHA-256" },
+        base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]));
+    }
+    return keyCache.get(ck);
+  }
+  async function encrypt(pw, saltB64, plain) {
+    if (!pw) throw new Error("비밀번호가 필요해");
+    const salt = saltB64 ? b64d(saltB64) : crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await lockKey(pw, salt), new TextEncoder().encode(plain)));
+    return `${LOCK_MARKER}v1.${b64e(salt)}.${b64e(iv)}.${b64e(ct)}`;
+  }
+  async function decrypt(pw, body) {
+    const p = isLocked(body) ? body.slice(LOCK_MARKER.length).split(".") : [];
+    if (p.length !== 4 || p[0] !== "v1") throw new Error("잠긴 메모 형식이 아님");
+    let pt;
+    try {
+      pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64d(p[2]) }, await lockKey(pw, b64d(p[1])), b64d(p[3]));
+    } catch (e) { throw new Error("비밀번호가 틀렸어"); }
+    return new TextDecoder().decode(pt);
+  }
+
   function plainOf(body) { // same rules as PlainText in remote.go
+    if (isLocked(body)) return LOCKED_TITLE;
     if (!isHTML(body)) return body;
     return body.slice(HTML_MARKER.length)
       .replace(/<br\s*\/?>|<\/(div|p|li|h[1-6])>/gi, "\n")
@@ -41,7 +82,7 @@
       })
       .replace(/ /g, " ");
   }
-  const conflictBody = (body) => isHTML(body)
+  const conflictBody = (body) => isLocked(body) ? body : isHTML(body)
     ? HTML_MARKER + "<div>[충돌]</div>" + body.slice(HTML_MARKER.length) : "[충돌] " + body;
   const cleanFolder = (f) => Array.from(String(f || "").trim()).slice(0, 30).join("");
   function titleOf(body) {
@@ -310,6 +351,7 @@
       if (!!m.pinned !== !!pinned) { m.pinned = !!pinned; m.updated = bump(m.updated); persist(); requestSync(1000); }
       return dto(m);
     },
+    encrypt, decrypt,
     async setFolder(id, folder) {
       const m = memos[id];
       if (!m || m.deleted) throw new Error("메모를 찾을 수 없음");

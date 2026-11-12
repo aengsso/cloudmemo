@@ -73,6 +73,9 @@
       <button id="f-clear" class="fmt" title="서식 지우기" aria-label="서식 지우기">
         <svg viewBox="0 0 24 24" width="19" height="19"><path d="M5 6h11M10.5 6l-3 13M14 14l6 6M20 14l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
       </button>
+      <button id="f-hr" class="fmt" title="굵은 구분선 (--- 입력 후 Enter)" aria-label="구분선">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 12h18" stroke="currentColor" stroke-width="4" stroke-linecap="round"/><path d="M7 6.5h10M7 17.5h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".45"/></svg>
+      </button>
       <span class="sep"></span>
       <button id="btn-check" class="fmt" title="체크리스트 (Ctrl+Shift+L)" aria-label="체크리스트">
         <svg viewBox="0 0 24 24" width="19" height="19"><rect x="3.5" y="3.5" width="17" height="17" rx="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8 12.2l2.7 2.7L16 9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
@@ -83,6 +86,19 @@
   </main>
 </div>
 <div id="menu" role="menu" hidden></div>
+<div id="modal" hidden>
+  <form id="pw-form" class="sheet" role="dialog" aria-modal="true" aria-labelledby="pw-title" autocomplete="off">
+    <h2 id="pw-title"></h2>
+    <p id="pw-note"></p>
+    <input id="pw1" type="password" autocomplete="off" placeholder="비밀번호" aria-label="비밀번호">
+    <input id="pw2" type="password" autocomplete="off" placeholder="비밀번호 확인" aria-label="비밀번호 확인">
+    <p id="pw-err" role="alert"></p>
+    <div class="sheet-btns">
+      <button type="button" id="pw-cancel" class="text-btn">취소</button>
+      <button type="submit" class="text-btn primary">확인</button>
+    </div>
+  </form>
+</div>
 <!--WEB-ONLY-START-->
 <script src="config.js"></script>
 <script src="api-web.js"></script>
