@@ -66,7 +66,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 #list .s { color: var(--muted); font-size: 13px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #list .s b { font-weight: 500; color: var(--text); opacity: .7; margin-right: 6px; }
 #list .none { color: var(--muted); text-align: center; padding: 30px 0; cursor: default; }
-#list li.none { background: none; }
+#list li.none, #list li.group { background: none; }
+#list li.group {
+  cursor: default; padding: 12px 12px 4px; margin: 0;
+  font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .02em;
+}
+#list .s i { font-style: normal; color: var(--accent); margin-right: 6px; }
 
 #sync-bar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -89,11 +94,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .editor-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; min-height: 52px; }
 #editor-meta { flex: 1; text-align: center; color: var(--muted); font-size: 12.5px; }
 .back { display: none; }
+#btn-pin svg path:first-child { fill: none; }
+#btn-pin.on svg path:first-child { fill: currentColor; }
 #editor {
   flex: 1; width: 100%; resize: none; border: 0; outline: none;
   padding: 6px 28px calc(28px + env(safe-area-inset-bottom));
   background: transparent; color: var(--text);
-  font: 16px/1.65 var(--font);
+  font: calc(16px * var(--fs, 1))/1.65 var(--font);
 }
 #empty-state { position: absolute; inset: 0; display: none; place-items: center; color: var(--muted); }
 #app.no-memo #editor, #app.no-memo .editor-head > :not(.back) { visibility: hidden; }
@@ -105,7 +112,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   #app.show-editor #sidebar { display: none; }
   #app.show-editor #editor-pane { display: flex; }
   .back { display: grid; }
-  #editor { padding: 6px 18px calc(24px + env(safe-area-inset-bottom)); font-size: 17px; }
+  #editor { padding: 6px 18px calc(24px + env(safe-area-inset-bottom)); font-size: calc(17px * var(--fs, 1)); }
+  .editor-head { gap: 2px; padding: 8px 8px; }
+  .editor-head .icon-btn { width: 40px; height: 40px; }
   #list li { padding: 12px; }
   #search { font-size: 16px; } /* avoids iOS zoom on focus */
 }

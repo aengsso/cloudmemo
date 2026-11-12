@@ -20,7 +20,7 @@
   let syncing = false, lastSync = 0, lastError = "", folderId = "", syncTimer = null;
   const persist = () => ls.set(K.memos, memos);
   const emit = (ev) => window.__cmEvent && window.__cmEvent(ev);
-  const dto = (m) => ({ id: m.id, body: m.body, updated: m.updated });
+  const dto = (m) => ({ id: m.id, body: m.body, updated: m.updated, pinned: !!m.pinned });
   const bump = (prev) => Math.max(Date.now(), (prev || 0) + 1);
   function newId() {
     const b = new Uint8Array(12); crypto.getRandomValues(b);
@@ -28,7 +28,7 @@
   }
   function titleOf(body) {
     for (const line of body.split("\n")) {
-      const t = line.trim();
+      const t = line.replace(/^[☐☑]+/, "").trim(); // same as TitleOf in remote.go
       if (t) return Array.from(t).slice(0, 40).join("");
     }
     return "제목 없음";
@@ -89,7 +89,12 @@
     }
     return res;
   }
-  const toRemote = (f) => ({ id: f.id, memoId: (f.appProperties || {}).memoId || "", name: f.name, modified: f.modifiedTime });
+  const toRemote = (f) => {
+    const p = f.appProperties || {};
+    return { id: f.id, memoId: p.memoId || "", name: f.name, modified: f.modifiedTime, pinned: p.pinned === "1" };
+  };
+  // Same as memoProps in remote.go: always send both keys.
+  const memoProps = (memoId, pinned) => ({ memoId, pinned: pinned ? "1" : "0" });
   function multipart(meta, body) {
     const b = "cm" + newId();
     return {
@@ -130,14 +135,14 @@
       const s = await (await gfetch(`${API}/files/${id}?alt=media`)).text();
       return s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
     },
-    async create(memoId, name, body) {
+    async create(memoId, name, body, pinned) {
       const { id } = await this.folder();
-      const meta = { name, mimeType: "text/plain", parents: [id], appProperties: { memoId } };
+      const meta = { name, mimeType: "text/plain", parents: [id], appProperties: memoProps(memoId, pinned) };
       return toRemote(await (await gfetch(`${UPLOAD}/files?uploadType=multipart&fields=${FILE_FIELDS}`,
         { method: "POST", ...multipart(meta, body) })).json());
     },
-    async update(fileId, memoId, name, body) {
-      const meta = { name, appProperties: { memoId } };
+    async update(fileId, memoId, name, body, pinned) {
+      const meta = { name, appProperties: memoProps(memoId, pinned) };
       return toRemote(await (await gfetch(`${UPLOAD}/files/${fileId}?uploadType=multipart&fields=${FILE_FIELDS}`,
         { method: "PATCH", ...multipart(meta, body) })).json());
     },
@@ -163,12 +168,13 @@
     const m = memos[l.id];
     if (!m || m.updated !== l.updated || m.deleted) return; // edited during download; next round
     const t = Date.parse(r.modified) || Date.now();
-    Object.assign(m, { body, updated: t, remoteId: r.id, remoteModified: r.modified, syncedAt: t });
+    Object.assign(m, { body, pinned: r.pinned, updated: t, remoteId: r.id, remoteModified: r.modified, syncedAt: t });
     persist();
   }
   async function push(l, fileId) {
     const name = fileNameOf(l.body);
-    const r = fileId ? await remote.update(fileId, l.id, name, l.body) : await remote.create(l.id, name, l.body);
+    const pinned = !!l.pinned;
+    const r = fileId ? await remote.update(fileId, l.id, name, l.body, pinned) : await remote.create(l.id, name, l.body, pinned);
     const m = memos[l.id];
     if (!m) return;
     Object.assign(m, { remoteId: r.id, remoteModified: r.modified, syncedAt: l.updated });
@@ -196,7 +202,7 @@
         const body = await remote.download(r.id);
         const t = Date.parse(r.modified) || Date.now();
         if (!memos[memoId]) {
-          memos[memoId] = { id: memoId, body, created: t, updated: t, remoteId: r.id, remoteModified: r.modified, syncedAt: t };
+          memos[memoId] = { id: memoId, body, pinned: r.pinned, created: t, updated: t, remoteId: r.id, remoteModified: r.modified, syncedAt: t };
           persist();
         }
         continue;
@@ -264,7 +270,8 @@
   // ---------- public API ----------
   window.api = {
     async list() {
-      return Object.values(memos).filter((m) => !m.deleted).sort((a, b) => b.updated - a.updated).map(dto);
+      return Object.values(memos).filter((m) => !m.deleted)
+        .sort((a, b) => (!!b.pinned - !!a.pinned) || b.updated - a.updated).map(dto);
     },
     async create() {
       const t = Date.now(), m = { id: newId(), body: "", created: t, updated: t };
@@ -275,6 +282,12 @@
       const m = memos[id];
       if (!m || m.deleted) throw new Error("메모를 찾을 수 없음");
       if (m.body !== body) { m.body = body; m.updated = bump(m.updated); persist(); requestSync(3000); }
+      return dto(m);
+    },
+    async setPinned(id, pinned) {
+      const m = memos[id];
+      if (!m || m.deleted) throw new Error("메모를 찾을 수 없음");
+      if (!!m.pinned !== !!pinned) { m.pinned = !!pinned; m.updated = bump(m.updated); persist(); requestSync(1000); }
       return dto(m);
     },
     async remove(id) {
