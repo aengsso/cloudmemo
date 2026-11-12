@@ -166,10 +166,10 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   white-space: pre-wrap; overflow-wrap: anywhere;
   -webkit-tap-highlight-color: transparent;
 }
-/* "엄청 큰" divider */
+/* Divider: clearly visible but thin */
 #editor hr {
-  border: 0; height: 5px; margin: 18px 0; border-radius: 3px;
-  background: var(--text); opacity: .8;
+  border: 0; height: 2px; margin: 16px 0; border-radius: 1px;
+  background: var(--text); opacity: .55;
 }
 #editor.empty > div:first-child::before {
   content: "첫 줄이 제목이 돼."; color: var(--muted); position: absolute; pointer-events: none;
