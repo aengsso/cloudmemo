@@ -257,8 +257,20 @@ button[hidden] { display: none !important; }
 .overlay[hidden] { display: none; }
 .head-btns { display: flex; gap: 2px; }
 
-/* ---- memo / diary tabs ---- */
-.tabs { margin: 0 14px 10px; }
+/* ---- memo / diary tabs: the header title itself ---- */
+.title-tabs { display: flex; gap: 14px; align-items: baseline; }
+.title-tabs button { font-size: 20px; font-weight: 700; color: var(--muted); opacity: .55; padding: 2px 0; }
+.title-tabs button.on { color: var(--text); opacity: 1; }
+@media (hover: hover) { .title-tabs button:not(.on):hover { opacity: .85; } }
+.diary-locked { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 0; color: var(--muted); }
+.diary-locked[hidden] { display: none; }
+.diary-locked p { margin: 0; }
+.diary-locked svg { opacity: .6; }
+.diary-locked .text-btn { font-size: 14px; padding: 7px 14px; }
+#cal-lock { color: var(--muted); }
+#cal-lock.on { color: var(--accent); }
+#diary.locked .cal-grid, #diary.locked .diary-list, #diary.locked #cal-today,
+#diary.locked #cal-prev, #diary.locked #cal-next { display: none; }
 #diary { display: none; }
 #app.tab-diary .search-wrap, #app.tab-diary #folders, #app.tab-diary #list { display: none; }
 #app.tab-diary #diary { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 8px; }

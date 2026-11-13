@@ -274,14 +274,14 @@
     const locked = memos.filter((m) => isLocked(m.body));
     if (!locked.length) {
       const pw = await askPassword({
-        title: "비밀 폴더 비밀번호 만들기", confirm: true,
-        note: "비밀 메모는 이 비밀번호로 암호화돼서 드라이브에서도 읽을 수 없어. 비밀번호를 잊으면 아무도 되살릴 수 없으니 꼭 기억해 둬. 다른 기기에서도 같은 비밀번호를 써.",
+        title: "비밀번호 만들기", confirm: true,
+        note: "비밀 폴더와 잠긴 일기는 이 비밀번호로 암호화돼서 드라이브에서도 읽을 수 없어. 비밀번호를 잊으면 아무도 되살릴 수 없으니 꼭 기억해 둬. 다른 기기에서도 같은 비밀번호를 써.",
       });
       if (!pw) return false;
       vault = { pw, salt: "", plain: new Map() };
     } else {
       const pw = await askPassword({
-        title: "비밀 폴더 열기",
+        title: "비밀번호 입력",
         check: async (pw) => { try { await api.decrypt(pw, locked[0].body); return ""; } catch (e) { return "비밀번호가 틀렸어"; } },
       });
       if (!pw) return false;
@@ -440,7 +440,7 @@
         <button class="text-btn primary" id="unlock-btn">비밀번호 입력</button></li>`;
       return;
     }
-    let shown = filter === SECRET ? memos.filter(isSecret) : memos.filter((m) => !isSecret(m) && !isDiary(m));
+    let shown = memos.filter((m) => !isDiary(m) && (filter === SECRET ? isSecret(m) : !isSecret(m)));
     if (filter != null && filter !== SECRET) shown = shown.filter((m) => m.folder === filter);
     if (q) shown = shown.filter((m) => plain(textOf(m)).toLowerCase().includes(q));
     if (!shown.length) {
@@ -507,8 +507,54 @@
   const diaryLabel = (s) => { const d = dayOf(s); return `${d.getMonth() + 1}월 ${d.getDate()}일 ${WD[d.getDay()]}요일`; };
   let calMonth = new Date(); calMonth.setDate(1);
   const isDiary = (m) => !!m.diary;
-  const written = (m) => isDiary(m) && !isSecret(m) && plain(textOf(m)).trim();
-  function setTab(t) {
+  const written = (m) => isDiary(m) && bodyOf(m) != null && plain(textOf(m)).trim();
+  // Diary lock: entries are encrypted with the secret-folder password. It is on when any
+  // entry is encrypted (so it follows sync), or when turned on here before any entry exists.
+  const DIARY_LOCK_KEY = "cloudmemo.diaryLock";
+  const diaryLocked = () => lsGet(DIARY_LOCK_KEY, false) || memos.some((m) => isDiary(m) && isLocked(m.body));
+  async function lockDiaryOn() {
+    if (!(await unlockVault())) return;
+    if (!confirm("일기를 모두 비밀번호로 잠글까?\n비밀 폴더와 같은 비밀번호를 써. 비밀번호를 잊으면 일기를 되살릴 수 없어.")) return;
+    await flush();
+    for (const m of memos.filter((x) => isDiary(x) && !isLocked(x.body) && plain(x.body).trim())) {
+      const enc = await encryptFor(m.body);
+      await api.save(m.id, enc);
+      vault.plain.set(m.id, { cipher: enc, text: m.body });
+    }
+    for (const m of memos) if (isDiary(m) && !isLocked(m.body)) pendingSecret.add(m.id); // empty new entries
+    lsSet(DIARY_LOCK_KEY, true);
+    memos = await api.list();
+    const cur = memos.find((x) => x.id === currentId);
+    if (cur && isDiary(cur)) shownBody = cur.body;
+    renderAll();
+    flashMeta("일기를 잠갔어");
+  }
+  async function lockDiaryOff() {
+    if (!vault || !confirm("일기 잠금을 풀까? 일기가 다시 암호화 없이 저장돼.")) return;
+    await flush();
+    for (const m of memos.filter((x) => isDiary(x) && isLocked(x.body))) {
+      const text = bodyOf(m);
+      if (text == null) continue; // made with another password: leave it locked
+      await api.save(m.id, text);
+      vault.plain.delete(m.id);
+    }
+    for (const m of memos) if (isDiary(m)) pendingSecret.delete(m.id);
+    lsSet(DIARY_LOCK_KEY, false);
+    memos = await api.list();
+    const cur = memos.find((x) => x.id === currentId);
+    if (cur && isDiary(cur)) shownBody = cur.body;
+    renderAll();
+    flashMeta("일기 잠금을 풀었어");
+  }
+  function diaryLockMenu(anchor) {
+    if (!diaryLocked()) { openMenu(anchor, [{ label: "일기 잠그기 (비밀번호)", onPick: lockDiaryOn }]); return; }
+    if (!vault) { unlockVault().then(renderAll); return; }
+    openMenu(anchor, [
+      { label: "지금 잠그기", onPick: lockVault },
+      { label: "일기 잠금 풀기", onPick: lockDiaryOff },
+    ]);
+  }
+  async function setTab(t) {
     tab = t; lsSet(TAB_KEY, t);
     app.classList.toggle("tab-diary", t === "diary");
     for (const b of $("tabs").children) {
@@ -516,11 +562,24 @@
       b.classList.toggle("on", on); b.setAttribute("aria-selected", on);
     }
     const cur = memos.find((x) => x.id === currentId);
+    if (cur && isDiary(cur) !== (t === "diary")) {
+      // The open memo belongs to the other tab: close it so the editor matches the tab.
+      await leaveCurrent();
+      currentId = null; setContent("");
+    }
     if (t === "diary" && cur && cur.diary) { calMonth = dayOf(cur.diary); calMonth.setDate(1); }
     renderAll();
   }
   function renderDiary() {
     if (tab !== "diary") return;
+    const locked = diaryLocked(), closed = locked && !vault;
+    const lb = $("cal-lock");
+    lb.innerHTML = LOCK_ICON(!closed).replace('width="13" height="13"', 'width="18" height="18"');
+    lb.classList.toggle("on", locked);
+    lb.title = !locked ? "일기 잠그기" : closed ? "일기 열기" : "일기 잠금 (열림)";
+    $("diary").classList.toggle("locked", closed);
+    $("diary-locked").hidden = !closed;
+    if (closed) { $("cal-title").textContent = "일기"; return; }
     const y = calMonth.getFullYear(), mo = calMonth.getMonth();
     $("cal-title").textContent = `${y}년 ${mo + 1}월`;
     const byDay = new Map();
@@ -547,10 +606,12 @@
   }
   // Opens the entry for a day, or starts a new one (discarded if left empty).
   async function openDiary(date) {
-    const existing = memos.filter((m) => m.diary === date && !isSecret(m)).sort((a, b) => b.updated - a.updated)[0];
+    if (diaryLocked() && !(await unlockVault())) { renderAll(); return; }
+    const existing = memos.filter((m) => m.diary === date && bodyOf(m) != null).sort((a, b) => b.updated - a.updated)[0];
     if (existing) { await select(existing.id); return; }
     await leaveCurrent();
     const m = await api.create("", date);
+    if (diaryLocked()) pendingSecret.add(m.id); // encrypted on first save
     memos.unshift(m);
     currentId = m.id;
     setContent("");
@@ -1164,6 +1225,8 @@
   $("cal-prev").onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderDiary(); };
   $("cal-next").onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderDiary(); };
   $("cal-today").onclick = () => { const t = new Date(); calMonth = new Date(t.getFullYear(), t.getMonth(), 1); renderDiary(); };
+  $("cal-lock").onclick = (e) => diaryLockMenu(e.currentTarget);
+  $("diary-unlock").onclick = () => unlockVault().then(renderAll);
   $("cal-grid").addEventListener("click", (e) => { const b = e.target.closest("button[data-date]"); if (b) openDiary(b.dataset.date); });
   $("diary-list").addEventListener("click", (e) => { const li = e.target.closest("li[data-id]"); if (li) select(li.dataset.id); });
   $("btn-settings").onclick = openSettings;
