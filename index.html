@@ -15,22 +15,44 @@
 <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
 <!--WEB-ONLY-END-->
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 <div id="app" class="show-list">
   <aside id="sidebar">
     <header class="side-head">
       <h1>메모</h1>
-      <button id="btn-new" class="icon-btn" title="새 메모 (Ctrl+N)" aria-label="새 메모">
-        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
-      </button>
+      <div class="head-btns">
+        <button id="btn-settings" class="icon-btn" title="화면 설정 (테마·색)" aria-label="화면 설정">
+          <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="8" cy="9" r="1.6" fill="currentColor"/><circle cx="12.5" cy="6.8" r="1.6" fill="currentColor"/><circle cx="16.6" cy="9.6" r="1.6" fill="currentColor"/><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.3 0 2-.8 2-1.8 0-1.5-1.4-1.6-1.4-3 0-1 .8-1.7 1.8-1.7h2.2a3.9 3.9 0 0 0 3.9-3.9C20.5 6.6 16.7 3.5 12 3.5z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/></svg>
+        </button>
+        <button id="btn-new" class="icon-btn" title="새 메모 (Ctrl+N)" aria-label="새 메모">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+        </button>
+      </div>
     </header>
+    <div class="seg tabs" id="tabs" role="tablist" aria-label="메모 / 일기">
+      <button data-tab="memo" role="tab">메모</button><button data-tab="diary" role="tab">일기</button>
+    </div>
     <div class="search-wrap">
       <input id="search" type="search" placeholder="검색" autocomplete="off">
     </div>
     <div id="folders" role="tablist" aria-label="폴더"></div>
     <ul id="list" role="listbox" aria-label="메모 목록"></ul>
+    <div id="diary" aria-label="일기">
+      <div class="cal-head">
+        <span id="cal-title"></span>
+        <button id="cal-today" class="text-btn">오늘</button>
+        <button id="cal-prev" class="icon-btn" aria-label="이전 달">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+        </button>
+        <button id="cal-next" class="icon-btn" aria-label="다음 달">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+        </button>
+      </div>
+      <div class="cal-grid" id="cal-grid"></div>
+      <ul class="diary-list" id="diary-list" aria-label="이 달의 일기"></ul>
+    </div>
     <footer id="sync-bar">
       <span id="sync-dot"></span>
       <span id="sync-text">…</span>
@@ -90,7 +112,22 @@
   </main>
 </div>
 <div id="menu" role="menu" hidden></div>
-<div id="modal" hidden>
+<div id="settings" class="overlay" hidden>
+  <div class="sheet settings" role="dialog" aria-modal="true" aria-labelledby="set-title">
+    <h2 id="set-title">화면 설정</h2>
+    <div class="set-label">모드</div>
+    <div class="seg" id="set-mode" role="radiogroup" aria-label="모드">
+      <button data-mode="" role="radio">자동</button><button data-mode="light" role="radio">라이트</button><button data-mode="dark" role="radio">다크</button>
+    </div>
+    <div class="set-label">테마</div>
+    <div class="themes" id="set-theme" role="radiogroup" aria-label="테마"></div>
+    <div class="set-label">강조색</div>
+    <div class="accents" id="set-accent" role="radiogroup" aria-label="강조색"></div>
+    <p class="set-note">이 기기에만 저장돼. 메모 내용에는 영향 없어.</p>
+    <div class="sheet-btns"><button type="button" class="text-btn primary" id="set-close">완료</button></div>
+  </div>
+</div>
+<div id="modal" class="overlay" hidden>
   <form id="pw-form" class="sheet" role="dialog" aria-modal="true" aria-labelledby="pw-title" autocomplete="off">
     <h2 id="pw-title"></h2>
     <p id="pw-note"></p>
@@ -104,9 +141,9 @@
   </form>
 </div>
 <!--WEB-ONLY-START-->
-<script src="config.js"></script>
-<script src="api-web.js"></script>
+<script src="config.js?v=8"></script>
+<script src="api-web.js?v=8"></script>
 <!--WEB-ONLY-END-->
-<script src="app.js"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

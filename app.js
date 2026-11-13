@@ -440,7 +440,7 @@
         <button class="text-btn primary" id="unlock-btn">비밀번호 입력</button></li>`;
       return;
     }
-    let shown = filter === SECRET ? memos.filter(isSecret) : memos.filter((m) => !isSecret(m));
+    let shown = filter === SECRET ? memos.filter(isSecret) : memos.filter((m) => !isSecret(m) && !isDiary(m));
     if (filter != null && filter !== SECRET) shown = shown.filter((m) => m.folder === filter);
     if (q) shown = shown.filter((m) => plain(textOf(m)).toLowerCase().includes(q));
     if (!shown.length) {
@@ -480,6 +480,9 @@
     pin.classList.toggle("on", !!(m && m.pinned));
     pin.setAttribute("aria-pressed", m && m.pinned ? "true" : "false");
     pin.title = m && m.pinned ? "고정 해제" : "고정";
+    const diary = !!(m && isDiary(m));
+    editor.classList.toggle("diary", diary);
+    $("btn-folder").hidden = pin.hidden = diary; // diary entries live in the calendar, not in folders
     const fb = $("btn-folder"), secret = !!(m && isSecret(m));
     fb.classList.toggle("on", !!(m && (m.folder || secret)));
     fb.title = secret ? "비밀 폴더" : m && m.folder ? `폴더: ${m.folder}` : "폴더로 옮기기";
@@ -488,10 +491,74 @@
     const date = new Date(m.updated).toLocaleString("ko-KR", narrow()
       ? { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }
       : { year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
+    if (diary) { $("editor-meta").textContent = `${diaryLabel(m.diary)} 일기`; return; }
     const where = secret ? "비밀" : m.folder;
     $("editor-meta").textContent = where ? `${where} · ${date}` : date;
   }
-  function renderAll() { renderFolders(); renderList(); renderEditor(); }
+  function renderAll() { renderFolders(); renderList(); renderDiary(); renderEditor(); }
+
+  // ---------- diary (memos with a "YYYY-MM-DD" date; shown in the 일기 tab as a calendar) ----------
+  const TAB_KEY = "cloudmemo.tab";
+  let tab = lsGet(TAB_KEY, "memo") === "diary" ? "diary" : "memo";
+  const pad = (n) => String(n).padStart(2, "0");
+  const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const WD = ["일", "월", "화", "수", "목", "금", "토"];
+  const dayOf = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+  const diaryLabel = (s) => { const d = dayOf(s); return `${d.getMonth() + 1}월 ${d.getDate()}일 ${WD[d.getDay()]}요일`; };
+  let calMonth = new Date(); calMonth.setDate(1);
+  const isDiary = (m) => !!m.diary;
+  const written = (m) => isDiary(m) && !isSecret(m) && plain(textOf(m)).trim();
+  function setTab(t) {
+    tab = t; lsSet(TAB_KEY, t);
+    app.classList.toggle("tab-diary", t === "diary");
+    for (const b of $("tabs").children) {
+      const on = b.dataset.tab === t;
+      b.classList.toggle("on", on); b.setAttribute("aria-selected", on);
+    }
+    const cur = memos.find((x) => x.id === currentId);
+    if (t === "diary" && cur && cur.diary) { calMonth = dayOf(cur.diary); calMonth.setDate(1); }
+    renderAll();
+  }
+  function renderDiary() {
+    if (tab !== "diary") return;
+    const y = calMonth.getFullYear(), mo = calMonth.getMonth();
+    $("cal-title").textContent = `${y}년 ${mo + 1}월`;
+    const byDay = new Map();
+    for (const m of memos) if (written(m)) (byDay.get(m.diary) || byDay.set(m.diary, []).get(m.diary)).push(m);
+    const cur = memos.find((x) => x.id === currentId), selDay = cur && cur.diary;
+    const first = new Date(y, mo, 1).getDay(), days = new Date(y, mo + 1, 0).getDate(), today = ymd(new Date());
+    let html = WD.map((w, i) => `<span class="wd${i === 0 ? " sun" : i === 6 ? " sat" : ""}">${w}</span>`).join("");
+    for (let i = 0; i < first; i++) html += "<span></span>";
+    for (let d = 1; d <= days; d++) {
+      const key = `${y}-${pad(mo + 1)}-${pad(d)}`, list = byDay.get(key), dow = (first + d - 1) % 7;
+      const cls = ["day", dow === 0 ? "sun" : dow === 6 ? "sat" : "", list ? "has" : "", key === today ? "today" : "", key === selDay ? "sel" : ""].filter(Boolean).join(" ");
+      const tip = list ? esc(title(textOf(list[0]))) : "";
+      html += `<button class="${cls}" data-date="${key}" title="${tip}" aria-label="${mo + 1}월 ${d}일${list ? ", 일기 있음" : ""}">${d}</button>`;
+    }
+    $("cal-grid").innerHTML = html;
+    const prefix = `${y}-${pad(mo + 1)}-`;
+    const inMonth = memos.filter((m) => written(m) && m.diary.startsWith(prefix))
+      .sort((a, b) => b.diary.localeCompare(a.diary) || b.updated - a.updated);
+    $("diary-list").innerHTML = inMonth.length
+      ? inMonth.map((m) => `<li data-id="${m.id}" class="${m.id === currentId ? "active" : ""}">
+          <div class="dd"><b>${+m.diary.slice(8)}</b><span>${WD[dayOf(m.diary).getDay()]}</span></div>
+          <div class="dt"><div class="t">${esc(title(textOf(m)))}</div><div class="s">${esc(snippet(textOf(m)))}</div></div></li>`).join("")
+      : `<li class="none">이 달에 쓴 일기가 없어. 날짜를 눌러서 써봐.</li>`;
+  }
+  // Opens the entry for a day, or starts a new one (discarded if left empty).
+  async function openDiary(date) {
+    const existing = memos.filter((m) => m.diary === date && !isSecret(m)).sort((a, b) => b.updated - a.updated)[0];
+    if (existing) { await select(existing.id); return; }
+    await leaveCurrent();
+    const m = await api.create("", date);
+    memos.unshift(m);
+    currentId = m.id;
+    setContent("");
+    renderAll();
+    if (narrow()) showEditor();
+    editor.focus();
+    caretAt(editor.firstElementChild, 0);
+  }
 
   // ---------- caret helpers ----------
   const sel = () => getSelection();
@@ -738,6 +805,75 @@
   }
   applyZoom();
 
+  // ---------- appearance: mode / theme / accent (per device) ----------
+  const LOOK_KEY = "cloudmemo.look";
+  // h/t: background hue/tint, a: accent for the preview card (CSS has the real values).
+  const THEMES = [
+    { id: "", n: "클래식", h: 45, t: 17, a: "hsl(37 77% 44%)" },
+    { id: "mint", n: "민트", h: 160, t: 20, a: "hsl(168 62% 34%)" },
+    { id: "lavender", n: "라벤더", h: 255, t: 24, a: "hsl(258 52% 52%)" },
+    { id: "ocean", n: "오션", h: 210, t: 24, a: "hsl(212 78% 44%)" },
+    { id: "rose", n: "로즈", h: 345, t: 24, a: "hsl(345 62% 50%)" },
+    { id: "mono", n: "모노", h: 0, t: 0, a: "hsl(0 0% 16%)" },
+  ];
+  const ACCENTS = ["#e5484d", "#f76b15", "#d9a400", "#30a46c", "#12a594", "#0090ff", "#3e63dd", "#8e4ec6", "#d6409f", "#1d1d1f"];
+  let look = { mode: "", theme: "", accent: "" };
+  try { look = Object.assign(look, JSON.parse(localStorage.getItem(LOOK_KEY) || "{}")); } catch (e) {}
+  function hexToHsl(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+    if (!m) return null;
+    const n = parseInt(m[1], 16), r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+    let h = 0, s = 0;
+    if (d) {
+      s = d / (1 - Math.abs(2 * l - 1));
+      h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      h = Math.round(h * 60 + 360) % 360;
+    }
+    return { h, s: Math.round(s * 100), l: Math.round(l * 100) };
+  }
+  function applyLook() {
+    const root = document.documentElement;
+    if (look.theme) root.dataset.theme = look.theme; else delete root.dataset.theme;
+    if (look.mode) root.dataset.mode = look.mode; else delete root.dataset.mode;
+    const c = hexToHsl(look.accent);
+    for (const k of ["--ah", "--as", "--al", "--al-d"]) root.style.removeProperty(k);
+    if (c) {
+      // Keep white text readable on it in light mode and dark text in dark mode.
+      root.style.setProperty("--ah", c.h);
+      root.style.setProperty("--as", c.s);
+      root.style.setProperty("--al", Math.min(Math.max(c.l, 22), 48) + "%");
+      root.style.setProperty("--al-d", Math.min(Math.max(c.l, 62), 80) + "%");
+    }
+    const bg = getComputedStyle(document.body).backgroundColor;
+    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute("content", bg));
+  }
+  function saveLook() {
+    try { localStorage.setItem(LOOK_KEY, JSON.stringify(look)); } catch (e) {}
+    applyLook(); renderSettings();
+  }
+  function renderSettings() {
+    for (const b of $("set-mode").children) {
+      const on = b.dataset.mode === look.mode;
+      b.classList.toggle("on", on); b.setAttribute("aria-checked", on);
+    }
+    $("set-theme").innerHTML = THEMES.map((t) => `
+      <button class="theme-card${t.id === look.theme ? " on" : ""}" data-theme="${t.id}" role="radio" aria-checked="${t.id === look.theme}">
+        <span class="pv" style="background:hsl(${t.h} ${t.t * 0.5}% 99%)">
+          <span class="sd" style="background:hsl(${t.h} ${t.t}% 92%)"><span class="dot" style="background:${t.a}"></span></span>
+          <span class="mn"><span class="ln" style="background:hsl(${t.h} 10% 30%);width:80%"></span><span class="ln" style="background:hsl(${t.h} 10% 30%);width:55%"></span></span>
+        </span>${t.n}</button>`).join("");
+    const custom = look.accent && !ACCENTS.includes(look.accent);
+    $("set-accent").innerHTML =
+      `<button class="acc default${!look.accent ? " on" : ""}" data-accent="" title="테마 기본색" aria-label="테마 기본색" role="radio" aria-checked="${!look.accent}"></button>` +
+      ACCENTS.map((a) => `<button class="acc${look.accent === a ? " on" : ""}" data-accent="${a}" style="background:${a}" aria-label="${a}" role="radio" aria-checked="${look.accent === a}"></button>`).join("") +
+      `<label class="acc pick${custom ? " on" : ""}" title="직접 고르기"><input type="color" id="set-pick" value="${look.accent || "#c8861a"}" aria-label="강조색 직접 고르기"></label>`;
+  }
+  function openSettings() { renderSettings(); $("settings").hidden = false; }
+  function closeSettings() { $("settings").hidden = true; }
+  applyLook();
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyLook);
+
   // ---------- popup menu ----------
   let menuAnchor = null;
   function closeMenu() { menu.hidden = true; menuAnchor = null; }
@@ -831,7 +967,7 @@
     const i = memos.findIndex((x) => x.id === m.id);
     if (i >= 0) memos.splice(i, 1);
     memos.unshift(m);
-    renderList(); renderEditor();
+    renderList(); renderDiary(); renderEditor();
   }
   function afterEdit() {
     updateEmpty();
@@ -864,6 +1000,7 @@
   }
 
   async function newMemo() {
+    if (tab === "diary") { const t = new Date(); calMonth = new Date(t.getFullYear(), t.getMonth(), 1); await openDiary(ymd(t)); return; }
     if (filter === SECRET && !(await unlockVault())) return;
     await leaveCurrent();
     search.value = "";
@@ -964,6 +1101,7 @@
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$("modal").hidden) $("pw-cancel").click();
+    else if (e.key === "Escape" && !$("settings").hidden) closeSettings();
   });
   $("folders").addEventListener("click", (e) => {
     const b = e.target.closest("button");
@@ -1022,6 +1160,26 @@
   editor.addEventListener("blur", flush);
   search.addEventListener("input", renderList);
   $("btn-new").onclick = newMemo;
+  $("tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-tab]"); if (b) setTab(b.dataset.tab); });
+  $("cal-prev").onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderDiary(); };
+  $("cal-next").onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderDiary(); };
+  $("cal-today").onclick = () => { const t = new Date(); calMonth = new Date(t.getFullYear(), t.getMonth(), 1); renderDiary(); };
+  $("cal-grid").addEventListener("click", (e) => { const b = e.target.closest("button[data-date]"); if (b) openDiary(b.dataset.date); });
+  $("diary-list").addEventListener("click", (e) => { const li = e.target.closest("li[data-id]"); if (li) select(li.dataset.id); });
+  $("btn-settings").onclick = openSettings;
+  $("set-close").onclick = closeSettings;
+  $("settings").addEventListener("click", (e) => {
+    if (e.target === $("settings")) { closeSettings(); return; }
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.mode != null && b.parentElement.id === "set-mode") { look.mode = b.dataset.mode; saveLook(); }
+    else if (b.dataset.theme != null) { look.theme = b.dataset.theme; look.accent = ""; saveLook(); }
+    else if (b.dataset.accent != null) { look.accent = b.dataset.accent; saveLook(); }
+  });
+  $("settings").addEventListener("input", (e) => {
+    if (e.target.id === "set-pick") { look.accent = e.target.value.toLowerCase(); try { localStorage.setItem(LOOK_KEY, JSON.stringify(look)); } catch (x) {} applyLook(); }
+  });
+  $("settings").addEventListener("change", (e) => { if (e.target.id === "set-pick") renderSettings(); });
   $("btn-delete").onclick = deleteCurrent;
   $("btn-pin").onclick = togglePin;
   $("btn-folder").onclick = (e) => folderMenu(e.currentTarget);
@@ -1060,7 +1218,10 @@
   (async () => {
     setContent("");
     await reload();
-    const first = memos.find((m) => !isSecret(m) && (filter == null || m.folder === filter));
+    setTab(tab);
+    const first = tab === "diary"
+      ? memos.find((m) => written(m) && m.diary === ymd(new Date()))
+      : memos.find((m) => !isSecret(m) && !isDiary(m) && (filter == null || m.folder === filter));
     if (!narrow() && first) await select(first.id);
     renderStatus();
     setInterval(renderStatus, 30000); // keeps "동기화됨 HH:MM" fresh

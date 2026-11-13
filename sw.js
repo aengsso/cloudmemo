@@ -1,5 +1,5 @@
 // Caches the app shell so the memo app opens offline. Bump VERSION when files change.
-const VERSION = "cloudmemo-v6";
+const VERSION = "cloudmemo-v8";
 const SHELL = ["./", "index.html", "style.css", "app.js", "api-web.js", "config.js",
                "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png"];
 
@@ -14,9 +14,10 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return; // never touch Google API calls
-  // Network first so updates show up; fall back to cache when offline.
+  // Network first so updates show up; fall back to cache when offline. "no-cache" revalidates
+  // with the server so a new app.js is never paired with an old api-web.js from the HTTP cache.
   e.respondWith(
-    fetch(e.request).then((res) => {
+    fetch(e.request, { cache: "no-cache" }).then((res) => {
       if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
       return res;
     }).catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match("index.html")))

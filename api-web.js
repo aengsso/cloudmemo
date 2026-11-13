@@ -20,7 +20,8 @@
   let syncing = false, lastSync = 0, lastError = "", folderId = "", syncTimer = null;
   const persist = () => ls.set(K.memos, memos);
   const emit = (ev) => window.__cmEvent && window.__cmEvent(ev);
-  const dto = (m) => ({ id: m.id, body: m.body, updated: m.updated, pinned: !!m.pinned, folder: m.folder || "" });
+  const dto = (m) => ({ id: m.id, body: m.body, updated: m.updated, pinned: !!m.pinned, folder: m.folder || "", diary: m.diary || "" });
+  const cleanDiary = (d) => (/^\d{4}-\d{2}-\d{2}$/.test(String(d || "").trim()) ? String(d).trim() : "");
   const bump = (prev) => Math.max(Date.now(), (prev || 0) + 1);
   function newId() {
     const b = new Uint8Array(12); crypto.getRandomValues(b);
@@ -93,6 +94,7 @@
     return "제목 없음";
   }
   const fileNameOf = (body) => titleOf(body).replace(/[\/\\:*?"<>|]/g, "_") + (isHTML(body) ? ".html" : ".txt");
+  const remoteName = (body, diary) => (diary ? diary + " " : "") + fileNameOf(body); // same as RemoteName in remote.go
 
   // ---------- auth (OAuth implicit flow via full-page redirect; popups are unreliable in iOS home-screen apps) ----------
   const redirectUri = () => new URL(".", location.href).href;
@@ -151,10 +153,10 @@
   const toRemote = (f) => {
     const p = f.appProperties || {};
     return { id: f.id, memoId: p.memoId || "", name: f.name, modified: f.modifiedTime,
-             pinned: p.pinned === "1", folder: p.folder || "" };
+             pinned: p.pinned === "1", folder: p.folder || "", diary: cleanDiary(p.diary) };
   };
   // Same as memoProps in remote.go: always send every key.
-  const memoProps = (memoId, meta) => ({ memoId, pinned: meta.pinned ? "1" : "0", folder: meta.folder || "" });
+  const memoProps = (memoId, meta) => ({ memoId, pinned: meta.pinned ? "1" : "0", folder: meta.folder || "", diary: meta.diary || "" });
   const mimeOf = (body) => (isHTML(body) ? "text/html" : "text/plain");
   function multipart(meta, body) {
     const b = "cm" + newId();
@@ -229,12 +231,12 @@
     const m = memos[l.id];
     if (!m || m.updated !== l.updated || m.deleted) return; // edited during download; next round
     const t = Date.parse(r.modified) || Date.now();
-    Object.assign(m, { body, pinned: r.pinned, folder: r.folder, updated: t, remoteId: r.id, remoteModified: r.modified, syncedAt: t });
+    Object.assign(m, { body, pinned: r.pinned, folder: r.folder, diary: r.diary, updated: t, remoteId: r.id, remoteModified: r.modified, syncedAt: t });
     persist();
   }
   async function push(l, fileId) {
-    const name = fileNameOf(l.body);
-    const mm = { pinned: !!l.pinned, folder: l.folder || "" };
+    const name = remoteName(l.body, l.diary || "");
+    const mm = { pinned: !!l.pinned, folder: l.folder || "", diary: l.diary || "" };
     const r = fileId ? await remote.update(fileId, l.id, name, l.body, mm) : await remote.create(l.id, name, l.body, mm);
     const m = memos[l.id];
     if (!m) return;
@@ -263,7 +265,7 @@
         const body = await remote.download(r.id);
         const t = Date.parse(r.modified) || Date.now();
         if (!memos[memoId]) {
-          memos[memoId] = { id: memoId, body, pinned: r.pinned, folder: r.folder, created: t, updated: t, remoteId: r.id, remoteModified: r.modified, syncedAt: t };
+          memos[memoId] = { id: memoId, body, pinned: r.pinned, folder: r.folder, diary: r.diary, created: t, updated: t, remoteId: r.id, remoteModified: r.modified, syncedAt: t };
           persist();
         }
         continue;
@@ -281,7 +283,7 @@
       const body = await remote.download(r.id);
       if (body !== l.body) {
         const t = Date.now(), id = newId();
-        memos[id] = { id, body: conflictBody(l.body), folder: l.folder || "", created: t, updated: t };
+        memos[id] = { id, body: conflictBody(l.body), folder: l.folder || "", diary: l.diary || "", created: t, updated: t };
         persist();
       }
       applyRemote(l, r, body);
@@ -334,8 +336,8 @@
       return Object.values(memos).filter((m) => !m.deleted)
         .sort((a, b) => (!!b.pinned - !!a.pinned) || b.updated - a.updated).map(dto);
     },
-    async create(folder) {
-      const t = Date.now(), m = { id: newId(), body: "", folder: cleanFolder(folder), created: t, updated: t };
+    async create(folder, diary) {
+      const t = Date.now(), m = { id: newId(), body: "", folder: cleanFolder(folder), diary: cleanDiary(diary), created: t, updated: t };
       memos[m.id] = m; persist();
       return dto(m);
     },
