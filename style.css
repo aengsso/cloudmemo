@@ -266,13 +266,39 @@ button[hidden] { display: none !important; }
 .present-page hr { border: 0; height: 1px; background: #c8c8c8; margin: .5em 0; }
 .present-page .box-line { cursor: pointer; }
 .present-page .box-line.done { color: #8a8a8a; }
+.present-page .end-note { color: #9a9a9a; font-size: 16px; }
 .present-bar { display: flex; justify-content: space-between; align-items: center; padding: 0 2.5vw 2vh; font-size: 14px; color: #8a8a8a; }
 #present-hint { transition: opacity .6s; }
 #present-hint.fade { opacity: 0; }
 .present-right { display: flex; align-items: center; gap: 14px; }
 #present-count { font-variant-numeric: tabular-nums; font-size: 16px; }
-#present-close { font-size: 13px; padding: 5px 10px; border-radius: 6px; color: #8a8a8a; border: 1px solid #ddd; }
-@media (hover: hover) { #present-close:hover { color: #141414; border-color: #999; } }
+#present .pb { font-size: 13px; padding: 5px 10px; border-radius: 6px; color: #8a8a8a; border: 1px solid #ddd; white-space: nowrap; }
+@media (hover: hover) { #present .pb:hover { color: #141414; border-color: #999; } }
+#present-prev, #present-fwd, #present-timer, .presenter-side { display: none; }
+.present-bar { flex-wrap: wrap; gap: 8px; }
+.present-right { flex-wrap: wrap; justify-content: flex-end; }
+/* Presenter view (audience window open): current slide, next slide, notes, timer. */
+#present.presenter {
+  display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
+  gap: 14px; padding: 14px; background: #1c1c1f; color: #e8e8ea;
+}
+#present.presenter #present-page { background: #ffffff; color: #141414; border-radius: 10px; padding: 4% 5%; }
+#present.presenter .presenter-side { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+#present.presenter #present-next {
+  flex: 0 0 38%; min-height: 0; background: #ffffff; color: #141414; border-radius: 8px; padding: 5% 6%; opacity: .85;
+}
+.pv-label { font-size: 13px; color: #9a9aa0; }
+#present-notes { flex: 1; min-height: 0; overflow: auto; font-size: 20px; line-height: 1.55; white-space: pre-wrap; color: #f2f2f4; }
+#present-notes.empty { font-size: 14px; color: #8a8a90; }
+#present.presenter .present-bar { grid-column: 1 / -1; padding: 0; color: #9a9aa0; }
+#present.presenter #present-prev, #present.presenter #present-fwd { display: inline-block; }
+#present.presenter #present-timer { display: inline; font-size: 22px; font-variant-numeric: tabular-nums; color: #f2f2f4; cursor: pointer; margin-right: 6px; }
+#present.presenter #present-count { color: #f2f2f4; }
+#present.presenter .pb { color: #c8c8cc; border-color: #44444a; }
+@media (hover: hover) { #present.presenter .pb:hover { color: #fff; border-color: #77777d; } }
+#present.presenter #present-screen { color: #fff; border-color: #7a7a80; }
+/* The audience window shows only the slide. */
+#present.audience .pb:not(#aud-full) { display: none; }
 
 .overlay {
   position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px;

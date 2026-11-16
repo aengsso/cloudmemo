@@ -15,7 +15,7 @@
 <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
 <!--WEB-ONLY-END-->
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 <div id="app" class="show-list">
@@ -122,9 +122,24 @@
 <div id="menu" role="menu" hidden></div>
 <div id="present" hidden role="dialog" aria-label="발표 모드">
   <div id="present-page" class="present-page" aria-live="polite"></div>
+  <aside class="presenter-side" aria-label="발표자 화면">
+    <div class="pv-label">다음 장</div>
+    <div id="present-next" class="present-page"></div>
+    <div class="pv-label">발표자 노트</div>
+    <div id="present-notes"></div>
+  </aside>
   <div class="present-bar">
-    <span id="present-hint">→ 스페이스 다음 · ← 이전 · Esc 끝내기</span>
-    <span class="present-right"><span id="present-count"></span><button type="button" id="present-close" aria-label="발표 끝내기">끝내기</button></span>
+    <span id="present-hint">→ 다음 · ← 이전 · Ctrl+휠 글자 크기 · P 발표자 화면 · Esc 끝내기</span>
+    <span class="present-right">
+      <span id="present-timer" title="눌러서 0부터 다시"></span>
+      <button type="button" class="pb" id="present-prev" aria-label="이전 장">◀</button>
+      <span id="present-count"></span>
+      <button type="button" class="pb" id="present-fwd" aria-label="다음 장">▶</button>
+      <button type="button" class="pb" id="present-smaller" title="글자 작게 (−, Ctrl+휠)" aria-label="글자 작게">가−</button>
+      <button type="button" class="pb" id="present-bigger" title="글자 크게 (+, Ctrl+휠)" aria-label="글자 크게">가+</button>
+      <button type="button" class="pb" id="present-screen" title="프로젝터에는 슬라이드만, 이 화면에는 노트와 다음 장 (P)">발표자 화면</button>
+      <button type="button" class="pb" id="present-close" aria-label="발표 끝내기">끝내기</button>
+    </span>
   </div>
 </div>
 <div id="settings" class="overlay" hidden>
@@ -156,9 +171,9 @@
   </form>
 </div>
 <!--WEB-ONLY-START-->
-<script src="config.js?v=12"></script>
-<script src="api-web.js?v=12"></script>
+<script src="config.js?v=13"></script>
+<script src="api-web.js?v=13"></script>
 <!--WEB-ONLY-END-->
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

@@ -954,9 +954,18 @@
   matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyLook);
 
   // ---------- presentation mode: dividers split the memo into pages ----------
-  const pres = { on: false, pages: [], i: 0, ownFullscreen: false, hintTimer: null };
+  // Lines starting with "//" are speaker notes: hidden on slides, shown in the presenter view.
+  // With the audience window open (presenter view), the projector window shows only the slide
+  // and this window shows the slide, the next one, the notes and a timer.
+  const PSCALE_KEY = "cloudmemo.presentScale";
+  const pres = {
+    on: false, pages: [], i: 0, ownFullscreen: false, hintTimer: null,
+    aud: null, audWatch: null, t0: 0, clock: null,
+    scale: Math.min(1, Math.max(0.3, +lsGet(PSCALE_KEY, 0.7) || 0.7)),
+  };
   const isBlankLine = (l) => !l.textContent.trim() && !l.querySelector("hr");
   const isBreakLine = (l) => l.nodeName === "HR" || (!!l.querySelector("hr") && !l.textContent.trim());
+  const isNoteLine = (l) => /^\s*\/\//.test(l.textContent);
   // Pages as lists of editor line indexes, without empty lines at their edges.
   function buildPages() {
     const pages = [[]];
@@ -967,12 +976,16 @@
       return p;
     }).filter((p) => p.length);
   }
-  function renderPage() {
-    const page = $("present-page"), idx = pres.pages[pres.i] || [];
+  // Draws one page into a slide box (this window or the audience window); returns its notes.
+  function renderSlide(page, idx) {
     page.replaceChildren();
+    const notes = [];
     for (const i of idx) {
+      const line = editor.children[i];
+      if (!line) continue;
+      if (isNoteLine(line)) { notes.push(line.textContent.replace(/^\s*\/\/\s?/, "")); continue; }
       const tmp = document.createElement("div");
-      tmp.appendChild(editor.children[i].cloneNode(true));
+      tmp.appendChild(line.cloneNode(true));
       const before = page.childNodes.length;
       cleanInto(tmp, page);
       const el = page.childNodes[before];
@@ -982,12 +995,40 @@
         if (c === OPEN || c === DONE) el.classList.add("box-line", ...(c === DONE ? ["done"] : []));
       }
     }
-    $("present-count").textContent = `${pres.i + 1} / ${pres.pages.length}`;
-    // Largest font that fits the screen (big enough to read from the back of the room).
-    let size = Math.max(18, Math.min(innerWidth / 16, innerHeight / 8.5));
+    // Font follows the box size and the chosen scale, then shrinks until the page fits.
+    let size = Math.max(12, Math.min(page.clientWidth / 15, page.clientHeight / 8) * pres.scale);
     const fits = () => page.scrollHeight <= page.clientHeight + 1 && page.scrollWidth <= page.clientWidth + 1;
     page.style.setProperty("--efs", size + "px");
-    while (!fits() && size > 14) { size *= 0.92; page.style.setProperty("--efs", size + "px"); }
+    while (!fits() && size > 10) { size *= 0.92; page.style.setProperty("--efs", size + "px"); }
+    return notes;
+  }
+  function renderPage() {
+    const idx = pres.pages[pres.i] || [], count = `${pres.i + 1} / ${pres.pages.length}`;
+    const notes = renderSlide($("present-page"), idx);
+    $("present-count").textContent = count;
+    if (!pres.aud) return;
+    const d = pres.aud.document;
+    renderSlide(d.getElementById("present-page"), idx);
+    d.getElementById("present-count").textContent = count;
+    const nx = $("present-next"), next = pres.pages[pres.i + 1];
+    if (next) renderSlide(nx, next);
+    else nx.replaceChildren(Object.assign(document.createElement("div"), { className: "end-note", textContent: "마지막 장이야" }));
+    const nt = $("present-notes");
+    nt.textContent = notes.length ? notes.join("\n") : "이 장에는 노트가 없어.\n메모에서 // 로 시작하는 줄이 그 장의 노트가 되고, 슬라이드에는 안 보여.";
+    nt.classList.toggle("empty", !notes.length);
+  }
+  function flashHint(text) {
+    const hint = $("present-hint");
+    hint.textContent = text;
+    hint.classList.remove("fade");
+    clearTimeout(pres.hintTimer);
+    pres.hintTimer = setTimeout(() => hint.classList.add("fade"), 3500);
+  }
+  function setScale(v) {
+    pres.scale = Math.round(Math.min(1, Math.max(0.3, v)) * 100) / 100;
+    lsSet(PSCALE_KEY, pres.scale);
+    renderPage();
+    flashHint(`글자 크기 ${Math.round(pres.scale * 100)}%`);
   }
   function startPresent() {
     if (!currentId) return;
@@ -1001,10 +1042,7 @@
     editor.blur();
     $("present").hidden = false;
     renderPage();
-    const hint = $("present-hint");
-    hint.classList.remove("fade");
-    clearTimeout(pres.hintTimer);
-    pres.hintTimer = setTimeout(() => hint.classList.add("fade"), 3500);
+    flashHint("→ 다음 · ← 이전 · Ctrl+휠 글자 크기 · P 발표자 화면 · Esc 끝내기");
     const root = document.documentElement;
     if (root.requestFullscreen && !document.fullscreenElement) {
       root.requestFullscreen().then(() => { pres.ownFullscreen = true; }).catch(() => {});
@@ -1013,6 +1051,7 @@
   function stopPresent() {
     if (!pres.on) return;
     pres.on = false;
+    closeAudience();
     $("present").hidden = true;
     if (pres.ownFullscreen && document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
     pres.ownFullscreen = false;
@@ -1033,31 +1072,121 @@
     afterEdit();
     renderPage();
   }
-  document.addEventListener("keydown", (e) => {
-    if (!pres.on) {
-      // F11 starts it in the desktop app (browsers keep F11 for their own full screen).
-      if (e.key === "F11" && window.cmStorage && currentId) { e.preventDefault(); startPresent(); }
-      return;
+
+  // ---- presenter view: a second window for the projector ----
+  function tick() {
+    const s = Math.floor((Date.now() - pres.t0) / 1000);
+    $("present-timer").textContent = `${Math.floor(s / 60)}:${pad(s % 60)}`;
+  }
+  function audienceCSS() {
+    return [...document.styleSheets].map((s) => {
+      try { return [...s.cssRules].map((r) => r.cssText).join("\n"); } catch (e) { return ""; }
+    }).join("\n");
+  }
+  function openAudience() {
+    if (pres.aud && !pres.aud.closed) { pres.aud.focus(); return; }
+    // The presenter window stays windowed so the audience window can sit on the projector.
+    if (pres.ownFullscreen) { pres.ownFullscreen = false; if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); }
+    const w = window.open("", "cloudmemo-audience", "popup,width=1024,height=640");
+    if (!w) { alert("발표 화면 창이 막혔어. 주소창 오른쪽의 팝업 차단 아이콘에서 허용해줘."); return; }
+    const d = w.document;
+    d.open();
+    d.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>발표 화면 - 클라우드 메모</title>` +
+      `<style>${audienceCSS()}</style></head><body><div id="present" class="audience">` +
+      `<div id="present-page" class="present-page"></div><div class="present-bar">` +
+      `<span id="present-hint">이 창을 프로젝터 화면으로 옮긴 뒤 F 키나 [전체 화면]을 눌러줘</span>` +
+      `<span class="present-right"><span id="present-count"></span><button type="button" class="pb" id="aud-full">전체 화면</button></span>` +
+      `</div></div></body></html>`);
+    d.close();
+    pres.aud = w;
+    const full = () => { const r = d.documentElement; if (r.requestFullscreen) r.requestFullscreen().catch(() => {}); };
+    d.addEventListener("keydown", (e) => {
+      if (e.key === "f" || e.key === "F") { e.preventDefault(); full(); return; }
+      presentKey(e);
+    }, true);
+    d.getElementById("present").addEventListener("click", (e) => {
+      if (e.target.closest("#aud-full")) { full(); return; }
+      goPage(pres.i + (e.clientX < w.innerWidth / 3 ? -1 : 1));
+    });
+    w.addEventListener("resize", () => { if (pres.aud) renderPage(); });
+    w.addEventListener("wheel", wheelZoom, { passive: false });
+    clearInterval(pres.audWatch);
+    pres.audWatch = setInterval(() => { if (pres.aud && pres.aud.closed) closeAudience(); }, 700);
+    $("present").classList.add("presenter");
+    $("present-screen").textContent = "발표자 화면 닫기";
+    pres.t0 = Date.now();
+    tick();
+    clearInterval(pres.clock);
+    pres.clock = setInterval(tick, 1000);
+    // On a second display, move the window there (Chrome asks for permission once).
+    if (screen.isExtended && window.getScreenDetails) {
+      window.getScreenDetails().then((sd) => {
+        const o = sd.screens.find((s) => s !== sd.currentScreen);
+        if (o && !w.closed) { w.moveTo(o.availLeft, o.availTop); w.resizeTo(o.availWidth, o.availHeight); }
+      }).catch(() => {});
     }
+    renderPage();
+  }
+  function closeAudience() {
+    clearInterval(pres.audWatch); clearInterval(pres.clock);
+    if (pres.aud && !pres.aud.closed) pres.aud.close();
+    pres.aud = null;
+    $("present").classList.remove("presenter");
+    $("present-screen").textContent = "발표자 화면";
+    if (pres.on) renderPage();
+  }
+
+  // ---- input: keys (this window and the audience window), Ctrl+wheel, clicks, swipes ----
+  function presentKey(e) {
+    if (!pres.on) return;
     const k = e.key;
     if (k === "Escape" || k === "F11") stopPresent();
     else if (k === "ArrowRight" || k === "ArrowDown" || k === "PageDown" || k === " " || k === "Enter") goPage(pres.i + 1);
     else if (k === "ArrowLeft" || k === "ArrowUp" || k === "PageUp" || k === "Backspace") goPage(pres.i - 1);
     else if (k === "Home") goPage(0);
     else if (k === "End") goPage(pres.pages.length - 1);
+    else if (k === "+" || k === "=") setScale(pres.scale + 0.1);
+    else if (k === "-" || k === "_") setScale(pres.scale - 0.1);
+    else if ((k === "p" || k === "P") && !e.ctrlKey && !e.metaKey) { if (pres.aud) closeAudience(); else openAudience(); }
     else return;
     e.preventDefault(); e.stopImmediatePropagation();
+  }
+  function wheelZoom(e) {
+    if (!pres.on || !(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault(); // instead of zooming the whole page
+    setScale(pres.scale + (e.deltaY < 0 ? 0.05 : -0.05));
+  }
+  document.addEventListener("keydown", (e) => {
+    if (!pres.on) {
+      // F11 starts it in the desktop app (browsers keep F11 for their own full screen).
+      if (e.key === "F11" && window.cmStorage && currentId) { e.preventDefault(); startPresent(); }
+      return;
+    }
+    presentKey(e);
   }, true);
+  addEventListener("wheel", wheelZoom, { passive: false });
   document.addEventListener("fullscreenchange", () => {
     // Leaving full screen (the browser takes the first Esc for that) ends the presentation too.
     if (!document.fullscreenElement && pres.ownFullscreen) { pres.ownFullscreen = false; stopPresent(); }
   });
   addEventListener("resize", () => { if (pres.on) renderPage(); });
+  addEventListener("pagehide", () => { if (pres.aud && !pres.aud.closed) pres.aud.close(); });
   $("present").addEventListener("click", (e) => {
-    if (e.target.closest("#present-close")) { stopPresent(); return; }
-    const box = e.target.closest(".box-line");
+    const b = e.target.closest("button");
+    if (b) {
+      if (b.id === "present-close") stopPresent();
+      else if (b.id === "present-prev") goPage(pres.i - 1);
+      else if (b.id === "present-fwd") goPage(pres.i + 1);
+      else if (b.id === "present-smaller") setScale(pres.scale - 0.1);
+      else if (b.id === "present-bigger") setScale(pres.scale + 0.1);
+      else if (b.id === "present-screen") { if (pres.aud) closeAudience(); else openAudience(); }
+      return;
+    }
+    if (e.target.closest("#present-timer")) { pres.t0 = Date.now(); tick(); return; }
+    if (e.target.closest(".presenter-side, .present-bar")) return;
+    const box = e.target.closest("#present-page .box-line");
     if (box) { toggleBoxLine(+box.dataset.line); return; }
-    goPage(pres.i + (e.clientX < innerWidth / 3 ? -1 : 1)); // tap left third: back, elsewhere: next
+    if (!pres.aud) goPage(pres.i + (e.clientX < innerWidth / 3 ? -1 : 1)); // tap left third: back, elsewhere: next
   });
   let touchX = null;
   $("present").addEventListener("touchstart", (e) => { touchX = e.touches[0].clientX; }, { passive: true });
