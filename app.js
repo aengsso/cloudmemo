@@ -4,6 +4,9 @@
   const api = window.api;
   const $ = (id) => document.getElementById(id);
   const app = $("app"), list = $("list"), editor = $("editor"), search = $("search"), menu = $("menu");
+  // Per-device settings: the desktop app provides window.cmStorage (saved to prefs.json),
+  // because its page has no web origin and localStorage would not persist there.
+  const prefStore = window.cmStorage || (() => { try { return window.localStorage; } catch (e) { return null; } })();
 
   let memos = [];
   let currentId = null;
@@ -225,8 +228,8 @@
 
   // ---------- folders (app-level; stored per memo, synced via Drive appProperties) ----------
   const FOLDERS_KEY = "cloudmemo.folders", FILTER_KEY = "cloudmemo.folderFilter";
-  const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
-  const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+  const lsGet = (k, d) => { try { const v = prefStore.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
+  const lsSet = (k, v) => { try { prefStore.setItem(k, JSON.stringify(v)); } catch (e) {} };
   let extraFolders = lsGet(FOLDERS_KEY, []);  // folders made on this device that may still be empty
   let filter = lsGet(FILTER_KEY, null);       // null = 전체
   if (filter === "@secret") filter = null;    // the secret folder always starts locked
@@ -871,12 +874,12 @@
   const ZOOM = [{ s: 0.875, n: "작게" }, { s: 1, n: "보통" }, { s: 1.15, n: "크게" }, { s: 1.3, n: "아주 크게" }];
   const FS_KEY = "cloudmemo.fontSize";
   let fsIndex = 1;
-  try { const i = +localStorage.getItem(FS_KEY); if (localStorage.getItem(FS_KEY) != null && ZOOM[i]) fsIndex = i; } catch (e) {}
+  try { const i = +prefStore.getItem(FS_KEY); if (prefStore.getItem(FS_KEY) != null && ZOOM[i]) fsIndex = i; } catch (e) {}
   function applyZoom() { document.documentElement.style.setProperty("--fs", ZOOM[fsIndex].s); }
   function cycleZoom() {
     fsIndex = (fsIndex + 1) % ZOOM.length;
     applyZoom();
-    try { localStorage.setItem(FS_KEY, String(fsIndex)); } catch (e) {}
+    try { prefStore.setItem(FS_KEY, String(fsIndex)); } catch (e) {}
     flashMeta("화면 글자 크기: " + ZOOM[fsIndex].n);
   }
   applyZoom();
@@ -894,7 +897,7 @@
   ];
   const ACCENTS = ["#e5484d", "#f76b15", "#d9a400", "#30a46c", "#12a594", "#0090ff", "#3e63dd", "#8e4ec6", "#d6409f", "#1d1d1f"];
   let look = { mode: "", theme: "", accent: "" };
-  try { look = Object.assign(look, JSON.parse(localStorage.getItem(LOOK_KEY) || "{}")); } catch (e) {}
+  try { look = Object.assign(look, JSON.parse(prefStore.getItem(LOOK_KEY) || "{}")); } catch (e) {}
   function hexToHsl(hex) {
     const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
     if (!m) return null;
@@ -925,7 +928,7 @@
     document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute("content", bg));
   }
   function saveLook() {
-    try { localStorage.setItem(LOOK_KEY, JSON.stringify(look)); } catch (e) {}
+    try { prefStore.setItem(LOOK_KEY, JSON.stringify(look)); } catch (e) {}
     applyLook(); renderSettings();
   }
   function renderSettings() {
@@ -949,6 +952,121 @@
   function closeSettings() { $("settings").hidden = true; }
   applyLook();
   matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyLook);
+
+  // ---------- presentation mode: dividers split the memo into pages ----------
+  const pres = { on: false, pages: [], i: 0, ownFullscreen: false, hintTimer: null };
+  const isBlankLine = (l) => !l.textContent.trim() && !l.querySelector("hr");
+  const isBreakLine = (l) => l.nodeName === "HR" || (!!l.querySelector("hr") && !l.textContent.trim());
+  // Pages as lists of editor line indexes, without empty lines at their edges.
+  function buildPages() {
+    const pages = [[]];
+    [...editor.children].forEach((l, i) => { if (isBreakLine(l)) pages.push([]); else pages[pages.length - 1].push(i); });
+    return pages.map((p) => {
+      while (p.length && isBlankLine(editor.children[p[0]])) p.shift();
+      while (p.length && isBlankLine(editor.children[p[p.length - 1]])) p.pop();
+      return p;
+    }).filter((p) => p.length);
+  }
+  function renderPage() {
+    const page = $("present-page"), idx = pres.pages[pres.i] || [];
+    page.replaceChildren();
+    for (const i of idx) {
+      const tmp = document.createElement("div");
+      tmp.appendChild(editor.children[i].cloneNode(true));
+      const before = page.childNodes.length;
+      cleanInto(tmp, page);
+      const el = page.childNodes[before];
+      if (el && el.nodeType === 1) {
+        el.dataset.line = i;
+        const c = el.textContent[0];
+        if (c === OPEN || c === DONE) el.classList.add("box-line", ...(c === DONE ? ["done"] : []));
+      }
+    }
+    $("present-count").textContent = `${pres.i + 1} / ${pres.pages.length}`;
+    // Largest font that fits the screen (big enough to read from the back of the room).
+    let size = Math.max(18, Math.min(innerWidth / 16, innerHeight / 8.5));
+    const fits = () => page.scrollHeight <= page.clientHeight + 1 && page.scrollWidth <= page.clientWidth + 1;
+    page.style.setProperty("--efs", size + "px");
+    while (!fits() && size > 14) { size *= 0.92; page.style.setProperty("--efs", size + "px"); }
+  }
+  function startPresent() {
+    if (!currentId) return;
+    const pages = buildPages();
+    if (!pages.length) { flashMeta("발표할 내용이 없어"); return; }
+    flush();
+    const caretLine = caretPos();
+    pres.pages = pages;
+    pres.i = Math.max(0, caretLine ? pages.findIndex((p) => p.includes(caretLine.i)) : 0);
+    pres.on = true;
+    editor.blur();
+    $("present").hidden = false;
+    renderPage();
+    const hint = $("present-hint");
+    hint.classList.remove("fade");
+    clearTimeout(pres.hintTimer);
+    pres.hintTimer = setTimeout(() => hint.classList.add("fade"), 3500);
+    const root = document.documentElement;
+    if (root.requestFullscreen && !document.fullscreenElement) {
+      root.requestFullscreen().then(() => { pres.ownFullscreen = true; }).catch(() => {});
+    }
+  }
+  function stopPresent() {
+    if (!pres.on) return;
+    pres.on = false;
+    $("present").hidden = true;
+    if (pres.ownFullscreen && document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    pres.ownFullscreen = false;
+  }
+  function goPage(d) {
+    const n = Math.min(pres.pages.length - 1, Math.max(0, d));
+    if (n !== pres.i) { pres.i = n; renderPage(); }
+  }
+  // Checking a box during the meeting edits the memo itself.
+  function toggleBoxLine(i) {
+    const line = editor.children[i];
+    if (!line) return;
+    const w = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = w.nextNode()) && !n.nodeValue) {}
+    if (!n || (n.nodeValue[0] !== OPEN && n.nodeValue[0] !== DONE)) return;
+    n.nodeValue = (n.nodeValue[0] === OPEN ? DONE : OPEN) + n.nodeValue.slice(1);
+    afterEdit();
+    renderPage();
+  }
+  document.addEventListener("keydown", (e) => {
+    if (!pres.on) {
+      // F11 starts it in the desktop app (browsers keep F11 for their own full screen).
+      if (e.key === "F11" && window.cmStorage && currentId) { e.preventDefault(); startPresent(); }
+      return;
+    }
+    const k = e.key;
+    if (k === "Escape" || k === "F11") stopPresent();
+    else if (k === "ArrowRight" || k === "ArrowDown" || k === "PageDown" || k === " " || k === "Enter") goPage(pres.i + 1);
+    else if (k === "ArrowLeft" || k === "ArrowUp" || k === "PageUp" || k === "Backspace") goPage(pres.i - 1);
+    else if (k === "Home") goPage(0);
+    else if (k === "End") goPage(pres.pages.length - 1);
+    else return;
+    e.preventDefault(); e.stopImmediatePropagation();
+  }, true);
+  document.addEventListener("fullscreenchange", () => {
+    // Leaving full screen (the browser takes the first Esc for that) ends the presentation too.
+    if (!document.fullscreenElement && pres.ownFullscreen) { pres.ownFullscreen = false; stopPresent(); }
+  });
+  addEventListener("resize", () => { if (pres.on) renderPage(); });
+  $("present").addEventListener("click", (e) => {
+    if (e.target.closest("#present-close")) { stopPresent(); return; }
+    const box = e.target.closest(".box-line");
+    if (box) { toggleBoxLine(+box.dataset.line); return; }
+    goPage(pres.i + (e.clientX < innerWidth / 3 ? -1 : 1)); // tap left third: back, elsewhere: next
+  });
+  let touchX = null;
+  $("present").addEventListener("touchstart", (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+  $("present").addEventListener("touchend", (e) => {
+    if (touchX == null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    touchX = null;
+    if (Math.abs(dx) > 50) { e.preventDefault(); goPage(pres.i + (dx < 0 ? 1 : -1)); }
+  });
 
   // ---------- popup menu ----------
   let menuAnchor = null;
@@ -1272,11 +1390,12 @@
     else if (b.dataset.accent != null) { look.accent = b.dataset.accent; saveLook(); }
   });
   $("settings").addEventListener("input", (e) => {
-    if (e.target.id === "set-pick") { look.accent = e.target.value.toLowerCase(); try { localStorage.setItem(LOOK_KEY, JSON.stringify(look)); } catch (x) {} applyLook(); }
+    if (e.target.id === "set-pick") { look.accent = e.target.value.toLowerCase(); try { prefStore.setItem(LOOK_KEY, JSON.stringify(look)); } catch (x) {} applyLook(); }
   });
   $("settings").addEventListener("change", (e) => { if (e.target.id === "set-pick") renderSettings(); });
   $("btn-delete").onclick = deleteCurrent;
   $("btn-pin").onclick = togglePin;
+  $("btn-present").onclick = startPresent;
   $("btn-folder").onclick = (e) => folderMenu(e.currentTarget);
   $("btn-font").onclick = cycleZoom;
   $("btn-check").onclick = toggleChecklist;
@@ -1304,6 +1423,10 @@
     if (mod && e.key.toLowerCase() === "f") { e.preventDefault(); search.focus(); search.select(); }
     if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); flush(); }
     if (mod && e.shiftKey && e.key.toLowerCase() === "l") { e.preventDefault(); toggleChecklist(); }
+    // Desktop app: F5 / Ctrl+R refresh the data instead of reloading the page.
+    if (window.cmStorage && (e.key === "F5" || (mod && e.key.toLowerCase() === "r"))) {
+      e.preventDefault(); flush().then(() => { api.syncNow(); reload(); });
+    }
   });
   document.addEventListener("visibilitychange", () => { if (document.hidden) flush(); });
   window.addEventListener("pagehide", flush);

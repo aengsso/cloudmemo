@@ -214,20 +214,20 @@ button[hidden] { display: none !important; }
   content: "첫 줄이 제목이 돼."; color: var(--muted); position: absolute; pointer-events: none;
 }
 /* Partial sizes (<font size>) scale with the device zoom; colors follow the theme. */
-#editor font[size="1"] { font-size: calc(var(--efs) * .75); }
-#editor font[size="2"] { font-size: calc(var(--efs) * .85); }
-#editor font[size="3"] { font-size: var(--efs); }
-#editor font[size="4"] { font-size: calc(var(--efs) * 1.15); }
-#editor font[size="5"] { font-size: calc(var(--efs) * 1.3); }
-#editor font[size="6"] { font-size: calc(var(--efs) * 1.6); }
-#editor font[size="7"] { font-size: calc(var(--efs) * 2); }
-#editor font[color="#010101"] { color: var(--text); }
-#editor font[color="#e03131"] { color: var(--c-red); }
-#editor font[color="#e8590c"] { color: var(--c-orange); }
-#editor font[color="#2f9e44"] { color: var(--c-green); }
-#editor font[color="#1971c2"] { color: var(--c-blue); }
-#editor font[color="#9c36b5"] { color: var(--c-purple); }
-#editor font[color="#868e96"] { color: var(--c-gray); }
+:is(#editor, #present-page) font[size="1"] { font-size: calc(var(--efs) * .75); }
+:is(#editor, #present-page) font[size="2"] { font-size: calc(var(--efs) * .85); }
+:is(#editor, #present-page) font[size="3"] { font-size: var(--efs); }
+:is(#editor, #present-page) font[size="4"] { font-size: calc(var(--efs) * 1.15); }
+:is(#editor, #present-page) font[size="5"] { font-size: calc(var(--efs) * 1.3); }
+:is(#editor, #present-page) font[size="6"] { font-size: calc(var(--efs) * 1.6); }
+:is(#editor, #present-page) font[size="7"] { font-size: calc(var(--efs) * 2); }
+:is(#editor, #present-page) font[color="#010101"] { color: var(--text); }
+:is(#editor, #present-page) font[color="#e03131"] { color: var(--c-red); }
+:is(#editor, #present-page) font[color="#e8590c"] { color: var(--c-orange); }
+:is(#editor, #present-page) font[color="#2f9e44"] { color: var(--c-green); }
+:is(#editor, #present-page) font[color="#1971c2"] { color: var(--c-blue); }
+:is(#editor, #present-page) font[color="#9c36b5"] { color: var(--c-purple); }
+:is(#editor, #present-page) font[color="#868e96"] { color: var(--c-gray); }
 
 #menu {
   position: fixed; z-index: 50; min-width: 150px; max-width: min(280px, calc(100vw - 16px));
@@ -249,6 +249,30 @@ button[hidden] { display: none !important; }
 #menu .size-s3 { font-size: 15px; }
 #menu .size-s5 { font-size: 19px; }
 #menu .size-s6 { font-size: 23px; }
+
+/* ---- presentation mode: one page per divider, light and high-contrast for projectors ---- */
+#present {
+  position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column;
+  background: #ffffff; color: #141414; cursor: default; -webkit-user-select: none; user-select: none;
+  --text: #141414; --muted: #8a8a8a;
+  --c-red: #e03131; --c-orange: #e8590c; --c-green: #2f9e44; --c-blue: #1971c2; --c-purple: #9c36b5; --c-gray: #868e96;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+#present[hidden] { display: none; }
+.present-page {
+  flex: 1; min-height: 0; overflow: hidden; padding: 6vh 7vw 2vh;
+  --efs: 40px; font: var(--efs)/1.45 var(--font); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.present-page hr { border: 0; height: 1px; background: #c8c8c8; margin: .5em 0; }
+.present-page .box-line { cursor: pointer; }
+.present-page .box-line.done { color: #8a8a8a; }
+.present-bar { display: flex; justify-content: space-between; align-items: center; padding: 0 2.5vw 2vh; font-size: 14px; color: #8a8a8a; }
+#present-hint { transition: opacity .6s; }
+#present-hint.fade { opacity: 0; }
+.present-right { display: flex; align-items: center; gap: 14px; }
+#present-count { font-variant-numeric: tabular-nums; font-size: 16px; }
+#present-close { font-size: 13px; padding: 5px 10px; border-radius: 6px; color: #8a8a8a; border: 1px solid #ddd; }
+@media (hover: hover) { #present-close:hover { color: #141414; border-color: #999; } }
 
 .overlay {
   position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px;
