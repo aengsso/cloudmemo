@@ -153,6 +153,75 @@
     }
   }
   // Every top-level node becomes a <div> line; empty lines get a <br> so they keep their height.
+  // One visual line = one top-level <div>. Pasted HTML and some edits can leave several lines
+  // inside one block (nested <div>s or <br> breaks); the checklist, Enter handling and the
+  // presentation all work per top-level line, so those blocks are split back into lines.
+  const CARET_ID = "cm-caret";
+  // A <br> only ends its line if nothing visible follows it inside the line (the browser's
+  // placeholder in an empty or just-finished line).
+  function trailingBr(br, line) {
+    for (let n = br; n && n !== line; n = n.parentNode)
+      for (let s = n.nextSibling; s; s = s.nextSibling)
+        if (s.textContent || (s.nodeType === 1 && (s.nodeName === "BR" || s.querySelector("br")))) return false;
+    return true;
+  }
+  function hasMergedLines(root) {
+    for (const n of root.childNodes) {
+      if (n.nodeType !== 1) return true;
+      if (n.nodeName === "HR") continue;
+      if (n.nodeName !== "DIV" || n.querySelector("div,p,li")) return true;
+      for (const br of n.querySelectorAll("br")) if (!trailingBr(br, n)) return true;
+    }
+    return false;
+  }
+  function splitLines(root) {
+    const out = document.createDocumentFragment();
+    let cur = document.createElement("div"), open = []; // open: [original inline element, its clone in cur]
+    const filled = () => cur.childNodes.length > 0;
+    const push = () => { if (!cur.firstChild) cur.appendChild(document.createElement("br")); out.appendChild(cur); cur = document.createElement("div"); open = []; };
+    const place = (node, stack) => { // put node into cur under clones of its inline ancestors
+      let k = 0;
+      while (k < open.length && k < stack.length && open[k][0] === stack[k]) k++;
+      open.length = k;
+      let parent = k ? open[k - 1][1] : cur;
+      for (; k < stack.length; k++) {
+        const c = stack[k].cloneNode(false);
+        parent.appendChild(c); open.push([stack[k], c]); parent = c;
+      }
+      parent.appendChild(node);
+    };
+    (function walk(node, stack) {
+      for (const c of node.childNodes) {
+        if (c.nodeType === 3) { if (c.nodeValue) place(c.cloneNode(), stack); }
+        else if (c.nodeType !== 1) continue;
+        else if (c.id === CARET_ID) place(c.cloneNode(false), stack);
+        else if (c.nodeName === "BR") push();
+        else if (c.nodeName === "HR") { if (filled()) push(); out.appendChild(document.createElement("hr")); }
+        else if (BLOCK.has(c.nodeName)) { if (filled()) push(); walk(c, []); if (filled()) push(); }
+        else walk(c, [...stack, c]);
+      }
+    })(root, []);
+    if (filled()) push();
+    return out;
+  }
+  // Splits merged lines in the editor itself, keeping the caret where it was.
+  function fixLines() {
+    if (!hasMergedLines(editor)) return false;
+    let mark = null;
+    if (inEditor() && sel().isCollapsed) {
+      mark = Object.assign(document.createElement("span"), { id: CARET_ID });
+      sel().getRangeAt(0).insertNode(mark);
+    }
+    editor.replaceChildren(splitLines(editor));
+    const m = editor.querySelector("#" + CARET_ID);
+    if (m) {
+      const r = document.createRange();
+      r.setStartBefore(m); r.collapse(true);
+      m.remove();
+      sel().removeAllRanges(); sel().addRange(r);
+    }
+    return true;
+  }
   function normalizeTop(root) {
     let run = null;
     for (const n of [...root.childNodes]) {
@@ -188,7 +257,7 @@
       }
     }
     normalizeTop(frag);
-    editor.replaceChildren(frag);
+    editor.replaceChildren(hasMergedLines(frag) ? splitLines(frag) : frag);
     shownBody = stored;
     savedBody = serialize();
     updateEmpty();
@@ -771,7 +840,7 @@
   // Turns the selected lines into checklist items, or back into plain lines if they all are.
   function toggleChecklist() {
     if (!currentId) return;
-    focusEditor(); ensureLines();
+    focusEditor(); ensureLines(); fixLines();
     const lines = selectedLines();
     if (!lines.length) return;
     const collapsed = sel().isCollapsed;
@@ -796,8 +865,31 @@
     afterEdit();
   }
   // Tapping a box (caret lands right before or after ☐/☑) checks or unchecks it.
+  // Typing "[] " (or "[ ] ") at the start of a line makes it a checklist item; "[x] " a checked one.
+  function autoBox() {
+    const s = sel();
+    if (!s.isCollapsed || !inEditor()) return;
+    const line = lineOf(s.anchorNode);
+    if (!line) return;
+    const off = lineOffset(line, s.anchorNode, s.anchorOffset);
+    const m = line.textContent.slice(0, off).replace(/ /g, " ").match(/^\s*\[( |x|X)?\] $/);
+    if (!m) return;
+    const box = (m[1] && m[1] !== " " ? DONE : OPEN) + " ";
+    let ok = false;
+    run(() => {
+      selectIn(line, 0, off);
+      ok = document.execCommand("insertText", false, box);
+    });
+    if (!ok) { // the browser refused a nested edit: change the text directly
+      const r = sel().getRangeAt(0);
+      r.deleteContents();
+      r.insertNode(document.createTextNode(box));
+      caretAt(line, box.length);
+    }
+  }
   function toggleBoxAtCaret() {
     if (!sel().isCollapsed || !inEditor()) return;
+    fixLines();
     const line = lineOf(sel().anchorNode);
     if (!line) return;
     const t = line.textContent, c = t[0];
@@ -838,7 +930,7 @@
   // Enter on an item starts a new item; Enter on an empty item ends the list; "---" + Enter draws a divider.
   let boxNext = false;
   function onEnter(e) {
-    ensureLines();
+    ensureLines(); fixLines();
     const line = inEditor() ? lineOf(sel().anchorNode) : null;
     const t = line ? line.textContent : "";
     if (line && /^\s*(-{3,}|―{3,}|={3,})\s*$/.test(t)) {
@@ -1474,6 +1566,7 @@
     if (composing || e.isComposing) return; // handled on compositionend
     if (e.inputType === "insertParagraph" && boxNext) { afterParagraph(); return; }
     if (!editor.firstChild || editor.firstChild.nodeType === 3) ensureLines();
+    if (e.inputType === "insertText" && e.data && e.data.endsWith(" ")) autoBox();
     afterEdit();
   });
   // Paste keeps the formatting this app supports (bold/italic/underline/size/color/divider)
@@ -1498,6 +1591,7 @@
       cleanInto(tpl.content, box);
       if (hasRich(box)) {
         run(() => document.execCommand("insertHTML", false, box.innerHTML));
+        fixLines(); // pasted blocks become separate lines
         afterEdit();
         return;
       }
