@@ -666,8 +666,23 @@
 
   // Remember the selection so toolbar taps (which may blur the editor on phones) act on it.
   let lastRange = null;
+  // Korean/Japanese/Chinese input (IME): while a syllable is being composed (ㅎ → 하 → 한), the
+  // editor must not be touched at all — no class changes, no DOM fixes, no caret moves, no
+  // re-render — or the IME commits early and only single letters come out. Deferred work runs
+  // on compositionend.
+  let composing = false;
   document.addEventListener("selectionchange", () => {
-    if (inEditor()) { lastRange = sel().getRangeAt(0).cloneRange(); updateFmtState(); }
+    if (composing || !inEditor()) return;
+    // A caret sitting directly in the editor (not in a line) would put typed text outside any
+    // line; move it into the nearest line before anything is typed.
+    const s = sel();
+    if (s.isCollapsed && s.anchorNode === editor && editor.children.length) {
+      const next = editor.childNodes[s.anchorOffset];
+      if (next && next.nodeType === 1) caretAt(next, 0);
+      else { const last = editor.lastElementChild; caretAt(last, last.textContent.length); }
+      return;
+    }
+    lastRange = s.getRangeAt(0).cloneRange(); updateFmtState();
   });
   function focusEditor() {
     if (document.activeElement !== editor) {
@@ -1000,7 +1015,7 @@
     if (currentId && !cur) {
       currentId = null; setContent("");
       if (narrow()) showList();
-    } else if (cur && cur.body !== shownBody && serialize() === savedBody && bodyOf(cur) != null) {
+    } else if (!composing && cur && cur.body !== shownBody && serialize() === savedBody && bodyOf(cur) != null) {
       // Changed by sync and no pending local edits: show the new text.
       const pos = document.activeElement === editor ? caretPos() : null;
       setContent(bodyOf(cur), cur.body);
@@ -1012,6 +1027,7 @@
   async function flush() {
     clearTimeout(saveTimer); saveTimer = null;
     if (!currentId) return;
+    if (composing) { saveTimer = setTimeout(flush, 400); return; } // save after the syllable is done
     const body = serialize();
     if (body === savedBody) return;
     const id = currentId;
@@ -1173,12 +1189,28 @@
     else if (b.dataset.all) setFilter(null);
     else if (b.dataset.f != null) setFilter(b.dataset.f);
   });
+  editor.addEventListener("compositionstart", () => {
+    composing = true;
+    clearTimeout(saveTimer);
+    // Drop the placeholder now, before the IME puts its first letter in.
+    editor.classList.remove("empty");
+  });
+  editor.addEventListener("compositionend", () => {
+    composing = false;
+    // Let the browser finish committing the syllable, then catch up on the deferred work.
+    setTimeout(() => {
+      if (composing) return;
+      if (!editor.firstChild || editor.firstChild.nodeType === 3) ensureLines();
+      afterEdit();
+    }, 0);
+  });
   editor.addEventListener("beforeinput", (e) => {
-    if (busy) return;
+    if (busy || composing || e.isComposing) return;
     if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") onEnter(e);
   });
   editor.addEventListener("input", (e) => {
     if (busy) return;
+    if (composing || e.isComposing) return; // handled on compositionend
     if (e.inputType === "insertParagraph" && boxNext) { afterParagraph(); return; }
     if (!editor.firstChild || editor.firstChild.nodeType === 3) ensureLines();
     afterEdit();
@@ -1218,7 +1250,7 @@
     afterEdit();
   });
   editor.addEventListener("click", toggleBoxAtCaret);
-  editor.addEventListener("blur", flush);
+  editor.addEventListener("blur", () => { composing = false; flush(); }); // a lost compositionend must not block saving
   search.addEventListener("input", renderList);
   $("btn-new").onclick = newMemo;
   $("tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-tab]"); if (b) setTab(b.dataset.tab); });
