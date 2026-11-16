@@ -957,11 +957,14 @@
   // Lines starting with "//" are speaker notes: hidden on slides, shown in the presenter view.
   // With the audience window open (presenter view), the projector window shows only the slide
   // and this window shows the slide, the next one, the notes and a timer.
-  const PSCALE_KEY = "cloudmemo.presentScale";
+  // Slide text size: Ctrl+wheel / +/- change it during a presentation only; every presentation
+  // starts again at the default, so nothing stays enlarged after leaving.
+  const PRESENT_SCALE = 0.7;
+  try { prefStore && prefStore.removeItem("cloudmemo.presentScale"); } catch (e) {} // older versions kept it
   const pres = {
     on: false, pages: [], i: 0, ownFullscreen: false, hintTimer: null,
-    aud: null, audWatch: null, t0: 0, clock: null,
-    scale: Math.min(1, Math.max(0.3, +lsGet(PSCALE_KEY, 0.7) || 0.7)),
+    aud: null, audWatch: null, t0: 0, clock: null, dpr: 1,
+    scale: PRESENT_SCALE,
   };
   const isBlankLine = (l) => !l.textContent.trim() && !l.querySelector("hr");
   const isBreakLine = (l) => l.nodeName === "HR" || (!!l.querySelector("hr") && !l.textContent.trim());
@@ -1026,7 +1029,6 @@
   }
   function setScale(v) {
     pres.scale = Math.round(Math.min(1, Math.max(0.3, v)) * 100) / 100;
-    lsSet(PSCALE_KEY, pres.scale);
     renderPage();
     flashHint(`글자 크기 ${Math.round(pres.scale * 100)}%`);
   }
@@ -1039,12 +1041,17 @@
     pres.pages = pages;
     pres.i = Math.max(0, caretLine ? pages.findIndex((p) => p.includes(caretLine.i)) : 0);
     pres.on = true;
+    pres.scale = PRESENT_SCALE;
+    pres.dpr = devicePixelRatio;
     editor.blur();
     $("present").hidden = false;
     renderPage();
     flashHint("→ 다음 · ← 이전 · Ctrl+휠 글자 크기 · P 발표자 화면 · Esc 끝내기");
+    // Browsers: go full screen (their first Esc leaves it, which ends the presentation too).
+    // Desktop app: its window already shows only the slide, and staying out of full screen
+    // keeps Esc reaching the page.
     const root = document.documentElement;
-    if (root.requestFullscreen && !document.fullscreenElement) {
+    if (!window.cmStorage && root.requestFullscreen && !document.fullscreenElement) {
       root.requestFullscreen().then(() => { pres.ownFullscreen = true; }).catch(() => {});
     }
   }
@@ -1053,8 +1060,11 @@
     pres.on = false;
     closeAudience();
     $("present").hidden = true;
+    pres.scale = PRESENT_SCALE;
     if (pres.ownFullscreen && document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
     pres.ownFullscreen = false;
+    // If the browser itself zoomed the page anyway, say how to undo it.
+    if (Math.abs(devicePixelRatio - pres.dpr) > 0.01) flashMeta("화면 배율이 바뀌었어 · Ctrl+0으로 원래대로");
   }
   function goPage(d) {
     const n = Math.min(pres.pages.length - 1, Math.max(0, d));
@@ -1140,7 +1150,8 @@
   function presentKey(e) {
     if (!pres.on) return;
     const k = e.key;
-    if (k === "Escape" || k === "F11") stopPresent();
+    if (k === "Escape" || k === "Esc" || k === "F11") stopPresent();
+    else if ((e.ctrlKey || e.metaKey) && k === "0") setScale(PRESENT_SCALE); // not the page zoom
     else if (k === "ArrowRight" || k === "ArrowDown" || k === "PageDown" || k === " " || k === "Enter") goPage(pres.i + 1);
     else if (k === "ArrowLeft" || k === "ArrowUp" || k === "PageUp" || k === "Backspace") goPage(pres.i - 1);
     else if (k === "Home") goPage(0);
@@ -1152,7 +1163,7 @@
     e.preventDefault(); e.stopImmediatePropagation();
   }
   function wheelZoom(e) {
-    if (!pres.on || !(e.ctrlKey || e.metaKey)) return;
+    if (!pres.on || !(e.ctrlKey || e.metaKey) || e.defaultPrevented) return; // listened twice: once is enough
     e.preventDefault(); // instead of zooming the whole page
     setScale(pres.scale + (e.deltaY < 0 ? 0.05 : -0.05));
   }
@@ -1164,7 +1175,10 @@
     }
     presentKey(e);
   }, true);
+  // Backup for Esc: some hosts swallow its keydown but still deliver keyup.
+  document.addEventListener("keyup", (e) => { if (pres.on && (e.key === "Escape" || e.key === "Esc")) stopPresent(); }, true);
   addEventListener("wheel", wheelZoom, { passive: false });
+  document.addEventListener("wheel", wheelZoom, { passive: false, capture: true });
   document.addEventListener("fullscreenchange", () => {
     // Leaving full screen (the browser takes the first Esc for that) ends the presentation too.
     if (!document.fullscreenElement && pres.ownFullscreen) { pres.ownFullscreen = false; stopPresent(); }
