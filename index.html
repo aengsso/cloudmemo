@@ -15,7 +15,7 @@
 <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
 <!--WEB-ONLY-END-->
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 <div id="app" class="show-list">
@@ -70,6 +70,9 @@
     <header class="editor-head" id="editor-head">
       <button id="btn-back" class="icon-btn back" aria-label="목록으로">
         <svg viewBox="0 0 24 24" width="22" height="22"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+      <button id="btn-side" class="icon-btn side-toggle" title="메모 목록 숨기기 (Ctrl+\)" aria-label="메모 목록 숨기기" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="20" height="20"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M9.5 4.5v15" stroke="currentColor" stroke-width="1.8"/><path class="side-fill" d="M4.4 6.5a1.6 1.6 0 0 1 1.6-1.6h3.5v14.2H6a1.6 1.6 0 0 1-1.6-1.6z" fill="currentColor" opacity=".35"/></svg>
       </button>
       <span id="editor-meta"></span>
       <button id="btn-folder" class="icon-btn" title="폴더로 옮기기" aria-label="폴더로 옮기기">
@@ -171,9 +174,9 @@
   </form>
 </div>
 <!--WEB-ONLY-START-->
-<script src="config.js?v=15"></script>
-<script src="api-web.js?v=15"></script>
+<script src="config.js?v=16"></script>
+<script src="api-web.js?v=16"></script>
 <!--WEB-ONLY-END-->
-<script src="app.js?v=15"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

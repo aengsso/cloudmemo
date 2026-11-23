@@ -1649,6 +1649,18 @@
     for (const ev of ["mousedown", "pointerdown"])
       el.addEventListener(ev, (e) => { if (e.target.closest("button")) e.preventDefault(); });
   $("btn-back").onclick = showList;
+  // Wide screens: fold the memo list away (remembered on this device).
+  const SIDE_KEY = "cloudmemo.hideSide";
+  function setSideHidden(on) {
+    app.classList.toggle("hide-side", on);
+    const b = $("btn-side"), label = on ? "메모 목록 보이기" : "메모 목록 숨기기";
+    b.setAttribute("aria-pressed", String(on));
+    b.setAttribute("aria-label", label);
+    b.title = label + " (Ctrl+\\)";
+    lsSet(SIDE_KEY, on);
+  }
+  setSideHidden(!!lsGet(SIDE_KEY, false));
+  $("btn-side").onclick = () => setSideHidden(!app.classList.contains("hide-side"));
   $("btn-login").onclick = () => { api.login(); setTimeout(renderStatus, 100); };
   $("btn-logout").onclick = async () => {
     if (confirm("구글 드라이브 연결을 해제할까? 메모는 이 기기에 남아.")) { await api.logout(); renderStatus(); }
@@ -1657,7 +1669,8 @@
   document.addEventListener("keydown", (e) => {
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); newMemo(); }
-    if (mod && e.key.toLowerCase() === "f") { e.preventDefault(); search.focus(); search.select(); }
+    if (mod && e.key === "\\") { e.preventDefault(); if (!narrow()) setSideHidden(!app.classList.contains("hide-side")); }
+    if (mod && e.key.toLowerCase() === "f") { e.preventDefault(); if (!narrow()) setSideHidden(false); search.focus(); search.select(); }
     if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); flush(); }
     if (mod && e.shiftKey && e.key.toLowerCase() === "l") { e.preventDefault(); toggleChecklist(); }
     // Desktop app: F5 / Ctrl+R refresh the data instead of reloading the page.
