@@ -81,7 +81,7 @@
       }
     })(root);
     end();
-    return lines.map((l) => l.replace(/ /g, " "));
+    return lines.map((l) => l.replace(/ /g, " ").replace(ZW, ""));
   }
   const plainCache = new Map();
   function plain(body) {
@@ -125,17 +125,36 @@
   }
   // Only these tags/attributes survive; everything else is unwrapped or dropped.
   const TAGS = { B: "B", STRONG: "B", I: "I", EM: "I", U: "U", FONT: "FONT", SPAN: "SPAN", MARK: "SPAN",
+                 S: "S", STRIKE: "S", DEL: "S", CODE: "CODE", TIME: "TIME",
                  BR: "BR", HR: "HR", DIV: "DIV", P: "DIV",
                  LI: "DIV", H1: "DIV", H2: "DIV", H3: "DIV", H4: "DIV", H5: "DIV", H6: "DIV", BLOCKQUOTE: "DIV", PRE: "DIV" };
   const DROP = new Set(["SCRIPT", "STYLE", "TEMPLATE", "IFRAME", "OBJECT", "EMBED", "SVG", "MATH", "IMG", "VIDEO",
                         "AUDIO", "CANVAS", "INPUT", "TEXTAREA", "SELECT", "BUTTON", "HEAD", "TITLE", "META", "LINK"]);
+  // Notion-style line types, kept as data-b on the line's <div> (headings, lists, quote, ...).
+  const BTYPES = new Set(["h1", "h2", "h3", "ul", "ol", "quote", "callout", "code"]);
+  function blockTypeOf(n) {
+    const b = n.getAttribute("data-b");
+    if (BTYPES.has(b)) return b;
+    switch (n.nodeName) {
+      case "H1": return "h1";
+      case "H2": return "h2";
+      case "H3": case "H4": case "H5": case "H6": return "h3";
+      case "BLOCKQUOTE": return "quote";
+      case "PRE": return "code";
+      case "LI": return n.parentNode && n.parentNode.nodeName === "OL" ? "ol" : "ul";
+    }
+    return "";
+  }
+  const ZW = /​/g; // zero-width space used to step out of inline code/bold made by typing
   function cleanInto(src, dst) {
     for (const n of src.childNodes) {
-      if (n.nodeType === 3) { dst.appendChild(document.createTextNode(n.nodeValue)); continue; }
+      if (n.nodeType === 3) { const v = n.nodeValue.replace(ZW, ""); if (v) dst.appendChild(document.createTextNode(v)); continue; }
       if (n.nodeType !== 1 || DROP.has(n.nodeName)) continue;
       const tag = TAGS[n.nodeName];
-      if (!tag) { cleanInto(n, dst); continue; }
+      if (!tag || (tag === "CODE" && n.parentNode && n.parentNode.closest && n.parentNode.closest("pre"))) { cleanInto(n, dst); continue; }
       const el = document.createElement(tag);
+      if (tag === "DIV") { const b = blockTypeOf(n); if (b) el.dataset.b = b; }
+      if (tag === "TIME") { const d = n.getAttribute("datetime"); if (/^[\d\-T:]{4,19}$/.test(d || "")) el.setAttribute("datetime", d); }
       if (tag === "FONT") {
         const c = normColor(n.getAttribute("color"));
         if (c) el.setAttribute("color", c);
@@ -177,9 +196,15 @@
   function splitLines(root) {
     const out = document.createDocumentFragment();
     let cur = document.createElement("div"), open = []; // open: [original inline element, its clone in cur]
+    let type = ""; // line type (data-b) of the block being walked; its lines keep it
     const filled = () => cur.childNodes.length > 0;
-    const push = () => { if (!cur.firstChild) cur.appendChild(document.createElement("br")); out.appendChild(cur); cur = document.createElement("div"); open = []; };
+    const push = () => {
+      if (!cur.firstChild) cur.appendChild(document.createElement("br"));
+      if (type && !cur.dataset.b) cur.dataset.b = type;
+      out.appendChild(cur); cur = document.createElement("div"); open = [];
+    };
     const place = (node, stack) => { // put node into cur under clones of its inline ancestors
+      if (type && !cur.firstChild) cur.dataset.b = type;
       let k = 0;
       while (k < open.length && k < stack.length && open[k][0] === stack[k]) k++;
       open.length = k;
@@ -197,7 +222,15 @@
         else if (c.id === CARET_ID) place(c.cloneNode(false), stack);
         else if (c.nodeName === "BR") push();
         else if (c.nodeName === "HR") { if (filled()) push(); out.appendChild(document.createElement("hr")); }
-        else if (BLOCK.has(c.nodeName)) { if (filled()) push(); walk(c, []); if (filled()) push(); }
+        else if (BLOCK.has(c.nodeName)) {
+          if (filled()) push();
+          const outer = type;
+          type = (c.nodeName === "DIV" ? c.getAttribute("data-b") : blockTypeOf(c)) || outer;
+          if (!BTYPES.has(type)) type = outer;
+          walk(c, []);
+          if (filled()) push();
+          type = outer;
+        }
         else walk(c, [...stack, c]);
       }
     })(root, []);
@@ -233,7 +266,7 @@
     if (!root.firstChild) root.appendChild(Object.assign(document.createElement("div"), { innerHTML: "<br>" }));
   }
 
-  const RICH = "b,i,u,font,strong,em,hr,mark";
+  const RICH = "b,i,u,font,strong,em,hr,mark,s,strike,del,code,time,div[data-b],h1,h2,h3,h4,h5,h6,blockquote,pre,li";
   const hasRich = (root) => !!root.querySelector(RICH) ||
     [...root.querySelectorAll("span[style]")].some((s) => normHighlight(s.style.backgroundColor));
   function serialize() {
@@ -308,7 +341,7 @@
     for (const m of memos) if (m.folder) s.add(m.folder);
     return [...s].sort((a, b) => a.localeCompare(b, "ko"));
   }
-  function setFilter(f) { filter = f; lsSet(FILTER_KEY, f); renderFolders(); renderList(); }
+  function setFilter(f) { filter = f; lsSet(FILTER_KEY, f); renderAll(); }
   const LOCK_ICON = (open) => `<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5" fill="currentColor"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 ${open ? "6.9-.8" : "7 0v2.5"}" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>`;
   function renderFolders() {
     const names = folderNames();
@@ -567,7 +600,7 @@
     const where = secret ? "비밀" : m.folder;
     $("editor-meta").textContent = where ? `${where} · ${date}` : date;
   }
-  function renderAll() { renderFolders(); renderList(); renderDiary(); renderEditor(); }
+  function renderAll() { renderFolders(); renderList(); renderDiary(); renderEditor(); $("browse-name").textContent = tab === "diary" ? "일기" : filter === SECRET ? "비밀" : filter == null ? "전체" : filter; }
 
   // ---------- diary (memos with a "YYYY-MM-DD" date; shown in the 일기 tab as a calendar) ----------
   const TAB_KEY = "cloudmemo.tab";
@@ -794,7 +827,8 @@
     afterEdit(); updateFmtState();
   }
   function updateFmtState() {
-    for (const [id, cmd] of [["f-bold", "bold"], ["f-italic", "italic"], ["f-under", "underline"]]) {
+    updateBlockState();
+    for (const [id, cmd] of [["f-bold", "bold"], ["f-italic", "italic"], ["f-under", "underline"], ["f-strike", "strikeThrough"]]) {
       let on = false;
       try { on = inEditor() && document.queryCommandState(cmd); } catch (e) {}
       $(id).classList.toggle("on", on);
@@ -927,13 +961,269 @@
     caretAt(next, 0);
   }
 
+  // ---------- line types (Notion-style blocks) ----------
+  // ic: icon in menus, kb: shortcut shown in menus, k: search words for the "/" menu.
+  const BLOCK_LIST = [
+    { t: "p", n: "텍스트", s: "본문", ic: "T", kb: "Ctrl+Alt+0", k: "text 텍스트 본문 일반 p" },
+    { t: "h1", n: "제목 1", s: "제목1", ic: "H1", kb: "# 스페이스", k: "h1 heading 제목1 제목 1 큰제목" },
+    { t: "h2", n: "제목 2", s: "제목2", ic: "H2", kb: "## 스페이스", k: "h2 heading 제목2 제목 2 중간제목" },
+    { t: "h3", n: "제목 3", s: "제목3", ic: "H3", kb: "### 스페이스", k: "h3 heading 제목3 제목 3 작은제목" },
+    { t: "ul", n: "글머리 기호 목록", s: "글머리", ic: "•", kb: "- 스페이스", k: "bullet ul list 글머리 기호 목록 리스트 점" },
+    { t: "ol", n: "번호 매기기 목록", s: "번호", ic: "1.", kb: "1. 스페이스", k: "number numbered ol list 번호 숫자 목록" },
+    { t: "todo", n: "체크리스트", s: "체크", ic: "☐", kb: "[] 스페이스", k: "todo check checklist 체크리스트 할일 할 일" },
+    { t: "quote", n: "인용", s: "인용", ic: "❝", kb: "> 스페이스", k: "quote blockquote 인용 말머리" },
+    { t: "callout", n: "콜아웃", s: "콜아웃", ic: "💡", kb: "Ctrl+Alt+9", k: "callout 콜아웃 강조 박스 상자 말머리 메모 알림" },
+    { t: "code", n: "코드", s: "코드", ic: "</>", kb: "``` 입력", k: "code 코드 프로그램" },
+    { t: "hr", n: "구분선", s: "구분선", ic: "―", kb: "--- 입력", k: "divider hr line 구분선 줄 선" },
+  ];
+  const blockOf = (line) => (line && line.dataset && BTYPES.has(line.dataset.b) ? line.dataset.b : "");
+  const setType = (line, t) => { if (BTYPES.has(t)) line.dataset.b = t; else line.removeAttribute("data-b"); };
+  // Turns the selected lines into a type ("p" = plain text). Pressing the same type again
+  // (e.g. Ctrl+Alt+1 on a heading) turns it back into text.
+  function setBlock(t) {
+    if (!currentId) return;
+    if (t === "hr") { insertDivider(); return; }
+    focusEditor(); ensureLines(); fixLines();
+    const lines = selectedLines();
+    if (!lines.length) return;
+    if (t === "todo") {
+      lines.forEach((l) => setType(l, ""));
+      if (!lines.filter((l) => l.textContent.trim()).every((l) => BOX_RE.test(l.textContent)) || lines.every((l) => !l.textContent.trim()))
+        toggleChecklist();
+      updateBlockState();
+      return;
+    }
+    const target = t !== "p" && lines.every((l) => blockOf(l) === t) ? "" : t;
+    const pos = sel().isCollapsed ? caretPos() : null;
+    let cut = 0;
+    run(() => {
+      for (const l of lines) {
+        const m = target && l.textContent.match(BOX_RE); // a heading/list line drops its checkbox
+        if (m) { editLine(l, 0, m[0].length, ""); if (l === lines[0]) cut = m[0].length; }
+      }
+    });
+    lines.forEach((l) => setType(l, target));
+    if (pos) restoreCaret({ i: pos.i, off: Math.max(0, pos.off - cut) });
+    afterEdit(); updateBlockState();
+  }
+  function curBlock() {
+    const line = inEditor() ? lineOf(sel().anchorNode) : null;
+    if (!line) return "p";
+    if (BOX_RE.test(line.textContent) && !blockOf(line)) return "todo";
+    return blockOf(line) || "p";
+  }
+  function updateBlockState() {
+    const b = BLOCK_LIST.find((x) => x.t === curBlock()) || BLOCK_LIST[0];
+    $("f-block-name").textContent = b.s;
+  }
+  function blockMenu(anchor) {
+    const cur = curBlock();
+    openMenu(anchor, BLOCK_LIST.map((b) => ({
+      html: `<span class="bi">${esc(b.ic)}</span><span class="bn">${esc(b.n)}</span><kbd>${esc(b.kb)}</kbd>`,
+      checked: b.t === cur, onPick: () => setBlock(b.t),
+    })));
+  }
+
+  // Typed shortcuts at the start of a line, finished with a space: "# " → heading, "- " → bullet, ...
+  const MD_BLOCKS = [[/^#$/, "h1"], [/^##$/, "h2"], [/^###$/, "h3"], [/^[-*+•]$/, "ul"], [/^\d{1,3}[.)]$/, "ol"], [/^[>"“”]$/, "quote"]];
+  function caretLine() {
+    const s = sel();
+    if (!s.isCollapsed || !inEditor()) return null;
+    const line = lineOf(s.anchorNode);
+    return line ? { line, off: lineOffset(line, s.anchorNode, s.anchorOffset) } : null;
+  }
+  // Removes the first `len` characters of a line without execCommand (not allowed inside an
+  // input handler) and puts the caret at the line start.
+  function cutLineStart(line, len) {
+    selectIn(line, 0, len);
+    sel().getRangeAt(0).deleteContents();
+    if (!line.textContent && !line.querySelector("br")) line.replaceChildren(document.createElement("br"));
+    caretAt(line, 0);
+  }
+  function autoBlock(ch) {
+    const c = caretLine();
+    if (!c || blockOf(c.line) === "code") return false;
+    const before = c.line.textContent.slice(0, c.off).replace(/ /g, " ");
+    if (ch === " ") {
+      const hit = MD_BLOCKS.find(([re]) => re.test(before.slice(0, -1)));
+      if (!hit || !before.endsWith(" ")) return false;
+      cutLineStart(c.line, c.off);
+      setType(c.line, hit[1]);
+      return true;
+    }
+    if (ch === "`" && before === "```") { cutLineStart(c.line, c.off); setType(c.line, "code"); return true; }
+    if (ch === "-" && before === "---" && c.line.textContent.replace(/ /g, " ").trim() === "---") {
+      const line = c.line;
+      setTimeout(() => { // a divider needs execCommand, which only works outside the input event
+        if (line.textContent.trim() !== "---") return;
+        run(() => { editLine(line, 0, line.textContent.length, ""); document.execCommand("insertHorizontalRule"); });
+        fixAfterDivider(); afterEdit();
+      }, 0);
+      return true;
+    }
+    return false;
+  }
+  // Inline marks typed Notion/Markdown style: **굵게**, *기울임*, `코드`, ~~취소선~~.
+  function autoInline(ch) {
+    const s = sel();
+    if (!s.isCollapsed || !inEditor()) return false;
+    const node = s.anchorNode;
+    if (!node || node.nodeType !== 3) return false;
+    const line = lineOf(node);
+    if (!line || blockOf(line) === "code" || node.parentNode.closest("code")) return false;
+    const before = node.nodeValue.slice(0, s.anchorOffset);
+    let m = null, tag = "", full = "";
+    if (ch === "*" && (m = before.match(/\*\*([^*\s](?:[^*]*?[^*\s])?)\*\*$/))) { tag = "b"; full = m[0]; }
+    else if (ch === "*" && (m = before.match(/(?:^|[^*])\*([^*\s](?:[^*]*?[^*\s])?)\*$/))) { tag = "i"; full = "*" + m[1] + "*"; }
+    else if (ch === "`" && (m = before.match(/`([^`]+)`$/))) { tag = "code"; full = m[0]; }
+    else if (ch === "~" && (m = before.match(/~~([^~\s](?:[^~]*?[^~\s])?)~~$/))) { tag = "s"; full = m[0]; }
+    if (!tag) return false;
+    const start = s.anchorOffset - full.length;
+    node.splitText(s.anchorOffset);
+    node.nodeValue = node.nodeValue.slice(0, start);
+    const el = document.createElement(tag);
+    el.textContent = m[1];
+    const z = document.createTextNode("​"); // caret goes after the mark, so typing continues plain
+    node.after(el, z);
+    const r = document.createRange();
+    r.setStart(z, 1); r.collapse(true);
+    sel().removeAllRanges(); sel().addRange(r);
+    return true;
+  }
+  // Ctrl+E: selected text becomes inline code (or back to plain text).
+  function toggleCode() {
+    if (!currentId) return;
+    focusEditor();
+    const s = sel();
+    if (!s.rangeCount) return;
+    const inCode = s.anchorNode && (s.anchorNode.nodeType === 1 ? s.anchorNode : s.anchorNode.parentNode).closest("code");
+    if (inCode && editor.contains(inCode)) {
+      const txt = document.createTextNode(inCode.textContent);
+      inCode.replaceWith(txt);
+      const r = document.createRange(); r.selectNodeContents(txt);
+      sel().removeAllRanges(); sel().addRange(r);
+    } else if (!s.isCollapsed) {
+      const text = s.toString();
+      if (!text.trim() || text.includes("\n") || selectedLines().length > 1) return;
+      const c = document.createElement("code");
+      c.textContent = text.replace(ZW, "");
+      putInline(c, "​");
+    } else return;
+    afterEdit();
+  }
+
+  // ---------- "/" menu: type / at the start of a line or after a space ----------
+  let slash = null; // { line, start, i, items }
+  function slashCheck() {
+    const c = caretLine();
+    if (slash) {
+      if (!c || c.line !== slash.line || c.off <= slash.start || c.line.textContent[slash.start] !== "/") { closeMenu(); return; }
+      const q = c.line.textContent.slice(slash.start + 1, c.off);
+      if (q.length > 24 || /\s\s/.test(q)) { closeMenu(); return; }
+      slashRender(q);
+      return;
+    }
+    if (!c || c.off < 1 || blockOf(c.line) === "code") return;
+    const t = c.line.textContent;
+    if (t[c.off - 1] !== "/" || (c.off > 1 && !/\s/.test(t[c.off - 2]))) return;
+    slash = { line: c.line, start: c.off - 1, i: 0, items: [] };
+    slashRender("");
+  }
+  function slashRender(q) {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const items = BLOCK_LIST.filter((b) => words.every((w) => (b.n + " " + b.k).toLowerCase().includes(w)));
+    if (!items.length) { closeMenu(); return; }
+    slash.items = items;
+    slash.i = Math.min(slash.i, items.length - 1);
+    menu.innerHTML = `<div class="menu-cap">블록 바꾸기 · ↑↓ 고르고 Enter</div>` + items.map((b, i) =>
+      `<button role="menuitem" data-s="${i}" class="${i === slash.i ? "hot" : ""}"><span class="bi">${esc(b.ic)}</span><span class="bn">${esc(b.n)}</span><kbd>${esc(b.kb)}</kbd></button>`).join("");
+    menu.hidden = false;
+    menuAnchor = null;
+    const r = sel().rangeCount ? sel().getRangeAt(0).getBoundingClientRect() : slash.line.getBoundingClientRect();
+    const top = r.bottom || slash.line.getBoundingClientRect().bottom, left = r.left || slash.line.getBoundingClientRect().left;
+    const w = menu.offsetWidth, h = menu.offsetHeight;
+    menu.style.left = Math.max(8, Math.min(left, innerWidth - w - 8)) + "px";
+    menu.style.top = (top + 6 + h > innerHeight - 8 ? Math.max(8, top - h - 28) : top + 6) + "px";
+    const hot = menu.querySelector(".hot");
+    if (hot) hot.scrollIntoView({ block: "nearest" });
+    menu.onclick = (e) => { const b = e.target.closest("button[data-s]"); if (b) slashPick(+b.dataset.s); };
+  }
+  function slashPick(i) {
+    if (!slash) return;
+    const { line, start, items } = slash, b = items[i];
+    const c = caretLine();
+    const end = c && c.line === line ? c.off : start + 1;
+    closeMenu();
+    if (!b) return;
+    focusEditor();
+    run(() => editLine(line, start, end, ""));
+    caretAt(line, start);
+    if (b.t === "hr" && !line.textContent.trim()) {
+      run(() => { editLine(line, 0, line.textContent.length, ""); document.execCommand("insertHorizontalRule"); });
+      fixAfterDivider(); afterEdit();
+      return;
+    }
+    setBlock(b.t);
+  }
+  function slashKey(e) { // keys while the "/" menu is open; true if used
+    if (!slash) return false;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const n = slash.items.length;
+      slash.i = (slash.i + (e.key === "ArrowDown" ? 1 : n - 1)) % n;
+      const c = caretLine();
+      slashRender(c ? c.line.textContent.slice(slash.start + 1, c.off) : "");
+      return true;
+    }
+    if ((e.key === "Enter" || e.key === "Tab") && !e.isComposing) { e.preventDefault(); slashPick(slash.i); return true; }
+    if (e.key === "Escape") { e.preventDefault(); closeMenu(); return true; }
+    return false;
+  }
+
+  // ---------- F5: current date and time as a small chip ----------
+  function insertNow() {
+    if (!currentId) return;
+    focusEditor();
+    const d = new Date();
+    const time = d.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
+    const label = `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 (${WD[d.getDay()]}) ${time}`;
+    const iso = `${ymd(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const t = document.createElement("time");
+    t.setAttribute("datetime", iso);
+    t.textContent = label;
+    putInline(t, " ");
+    afterEdit();
+  }
+  // Puts an inline element at the caret (replacing a selection) and the caret right after it.
+  // Done on the DOM: insertHTML would wrap the following text in a span with fixed colors.
+  function putInline(el, tail) {
+    const r = sel().getRangeAt(0);
+    r.deleteContents();
+    const after = document.createTextNode(tail);
+    r.insertNode(after);
+    r.insertNode(el);
+    const c = document.createRange();
+    c.setStart(after, tail.length); c.collapse(true);
+    sel().removeAllRanges(); sel().addRange(c);
+  }
+
   // Enter on an item starts a new item; Enter on an empty item ends the list; "---" + Enter draws a divider.
   let boxNext = false;
+  let enterFix = null; // line type to carry over (or not) after the browser splits the line
   function onEnter(e) {
     ensureLines(); fixLines();
     const line = inEditor() ? lineOf(sel().anchorNode) : null;
     const t = line ? line.textContent : "";
-    if (line && /^\s*(-{3,}|―{3,}|={3,})\s*$/.test(t)) {
+    const bt = blockOf(line);
+    // Enter on an empty list/quote/code line ends it (back to plain text), like Notion.
+    if (bt && e.inputType === "insertParagraph" && !t.replace(ZW, "").trim() && bt !== "h1" && bt !== "h2" && bt !== "h3") {
+      e.preventDefault();
+      setType(line, "");
+      afterEdit(); updateBlockState();
+      return;
+    }
+    enterFix = null;
+    if (line && bt !== "code" && /^\s*(-{3,}|―{3,}|={3,})\s*$/.test(t)) {
       e.preventDefault();
       run(() => { editLine(line, 0, t.length, ""); document.execCommand("insertHorizontalRule"); });
       fixAfterDivider();
@@ -948,18 +1238,32 @@
       return;
     }
     boxNext = !!m;
+    enterFix = line ? {
+      type: bt, shift: e.inputType === "insertLineBreak",
+      atStart: !!t.replace(ZW, "").trim() && lineOffset(line, sel().anchorNode, sel().anchorOffset) === 0,
+    } : null;
     if (e.inputType === "insertLineBreak") { // Shift+Enter: keep one line per block
       e.preventDefault();
       run(() => document.execCommand("insertParagraph"));
       afterParagraph();
     }
   }
+  const CONTINUES = new Set(["ul", "ol", "quote", "callout", "code"]); // Enter keeps these types
   function afterParagraph() {
-    if (!boxNext) { afterEdit(); return; }
-    boxNext = false;
     const line = inEditor() ? lineOf(sel().anchorNode) : null;
-    if (line && !BOX_RE.test(line.textContent)) run(() => editLine(line, 0, 0, OPEN + " "));
-    afterEdit();
+    if (enterFix && line) {
+      const f = enterFix, keep = f.shift || CONTINUES.has(f.type);
+      if (f.atStart) { // the browser added an empty line above; the caret line is the original
+        setType(line, f.type);
+        if (line.previousElementSibling && !keep) setType(line.previousElementSibling, "");
+      } else setType(line, keep ? f.type : "");
+    }
+    enterFix = null;
+    if (boxNext) {
+      boxNext = false;
+      if (line && !BOX_RE.test(line.textContent)) run(() => editLine(line, 0, 0, OPEN + " "));
+    }
+    afterEdit(); updateBlockState();
   }
 
   // ---------- font zoom for this device (whole editor) ----------
@@ -1305,7 +1609,7 @@
 
   // ---------- popup menu ----------
   let menuAnchor = null;
-  function closeMenu() { menu.hidden = true; menuAnchor = null; }
+  function closeMenu() { menu.hidden = true; menuAnchor = null; slash = null; }
   function openMenu(anchor, items) {
     if (menuAnchor === anchor) { closeMenu(); return; }
     menu.innerHTML = items.map((it, i) => it === "-" ? "<hr>" :
@@ -1531,6 +1835,7 @@
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$("modal").hidden) $("pw-cancel").click();
+    else if (e.key === "Escape" && !$("help").hidden) toggleHelp();
     else if (e.key === "Escape" && !$("settings").hidden) closeSettings();
   });
   $("folders").addEventListener("click", (e) => {
@@ -1558,16 +1863,38 @@
     }, 0);
   });
   editor.addEventListener("beforeinput", (e) => {
-    if (busy || composing || e.isComposing) return;
+    if (busy) return;
+    if (slash && e.inputType === "insertParagraph") { e.preventDefault(); slashPick(slash.i); return; }
+    if (composing || e.isComposing) return;
     if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") onEnter(e);
   });
   editor.addEventListener("input", (e) => {
     if (busy) return;
+    if (slash || (e.data && e.data.includes("/"))) slashCheck(); // only reads the editor: safe while composing
     if (composing || e.isComposing) return; // handled on compositionend
-    if (e.inputType === "insertParagraph" && boxNext) { afterParagraph(); return; }
+    if (e.inputType === "insertParagraph") { afterParagraph(); return; }
     if (!editor.firstChild || editor.firstChild.nodeType === 3) ensureLines();
-    if (e.inputType === "insertText" && e.data && e.data.endsWith(" ")) autoBox();
+    if (e.inputType === "insertText" && e.data) {
+      const ch = e.data.slice(-1);
+      if (ch === " ") { autoBox(); autoBlock(" "); }
+      else if (ch === "`") { if (!autoBlock("`")) autoInline("`"); }
+      else if (ch === "-") autoBlock("-");
+      else if (ch === "*" || ch === "~") autoInline(ch);
+      updateBlockState();
+    }
     afterEdit();
+  });
+  editor.addEventListener("keydown", (e) => {
+    if (slashKey(e)) return;
+    // Backspace at the very start of a heading/list/quote line turns it back into plain text.
+    if (e.key === "Backspace" && !e.isComposing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const c = caretLine();
+      if (c && blockOf(c.line) && c.off === 0) {
+        e.preventDefault();
+        setType(c.line, "");
+        afterEdit(); updateBlockState();
+      }
+    }
   });
   // Paste keeps the formatting this app supports (bold/italic/underline/size/color/divider)
   // and drops everything else, so web pages don't bring their layout along.
@@ -1661,6 +1988,80 @@
   }
   setSideHidden(!!lsGet(SIDE_KEY, false));
   $("btn-side").onclick = () => setSideHidden(!app.classList.contains("hide-side"));
+
+  // With the list hidden: a folder button in the header picks a folder, then a memo in it.
+  function browseLabel() {
+    return tab === "diary" ? "일기" : filter === SECRET ? "비밀" : filter == null ? "전체" : filter;
+  }
+  function memoItems(shown) {
+    const pinned = shown.filter((m) => m.pinned), rest = shown.filter((m) => !m.pinned);
+    return [...pinned, ...rest].slice(0, 60).map((m) => {
+      const body = bodyOf(m);
+      return {
+        html: `<span class="mt">${m.pinned ? "📌 " : ""}${esc(body == null ? "다른 비밀번호로 잠긴 메모" : title(body))}</span><small>${esc(fmtDate(m.updated))}</small>`,
+        checked: m.id === currentId, onPick: () => select(m.id),
+      };
+    });
+  }
+  function browseMemos(anchor, f) {
+    const shown = memos.filter((m) => !isDiary(m) && (f === SECRET ? isSecret(m) : !isSecret(m)) && (f == null || f === SECRET || m.folder === f));
+    const name = f === SECRET ? "비밀" : f == null ? "전체" : f;
+    openMenu(anchor, [
+      { html: `<span class="mt">← 폴더 목록</span>`, onPick: () => setTimeout(() => browseMenu(anchor), 0) },
+      { html: `<span class="mt">＋ "${esc(name)}"에 새 메모</span>`, onPick: newMemo },
+      "-",
+      ...(shown.length ? memoItems(shown) : [{ label: "이 폴더에 메모가 없어", onPick: () => {} }]),
+    ]);
+  }
+  async function browseFolder(anchor, f) {
+    if (f === SECRET && !(await unlockVault())) { renderFolders(); return; }
+    if (tab === "diary") await setTab("memo");
+    setFilter(f);
+    renderBrowse();
+    setTimeout(() => browseMemos(anchor, f), 0);
+  }
+  function browseMenu(anchor) {
+    const count = (f) => memos.filter((m) => !isDiary(m) && !isSecret(m) && (f == null || m.folder === f)).length;
+    const cur = tab === "diary" ? "@diary" : filter;
+    openMenu(anchor, [
+      { html: `<span class="mt">전체</span><small>${count(null)}</small>`, checked: cur == null, onPick: () => browseFolder(anchor, null) },
+      ...folderNames().map((n) => ({ html: `<span class="mt">${esc(n)}</span><small>${count(n)}</small>`, checked: cur === n, onPick: () => browseFolder(anchor, n) })),
+      { html: `<span class="mt">${LOCK_ICON(!!vault)} 비밀</span>`, checked: cur === SECRET, onPick: () => browseFolder(anchor, SECRET) },
+      "-",
+      { html: `<span class="mt">일기</span>`, checked: cur === "@diary", onPick: async () => {
+        if (tab !== "diary") await setTab("diary");
+        renderBrowse();
+        if (diaryLocked() && !(await unlockVault())) return;
+        const entries = memos.filter((m) => written(m)).sort((a, b) => b.diary.localeCompare(a.diary) || b.updated - a.updated);
+        setTimeout(() => openMenu(anchor, [
+          { html: `<span class="mt">← 폴더 목록</span>`, onPick: () => setTimeout(() => browseMenu(anchor), 0) },
+          { html: `<span class="mt">＋ 오늘 일기</span>`, onPick: newMemo },
+          "-",
+          ...(entries.length ? entries.slice(0, 60).map((m) => ({
+            html: `<span class="mt">${esc(diaryLabel(m.diary))}</span><small>${esc(title(textOf(m)))}</small>`,
+            checked: m.id === currentId, onPick: () => select(m.id),
+          })) : [{ label: "아직 쓴 일기가 없어", onPick: () => {} }]),
+        ]), 0);
+      } },
+    ]);
+  }
+  function renderBrowse() { $("browse-name").textContent = browseLabel(); }
+  $("btn-browse").onclick = (e) => browseMenu(e.currentTarget);
+
+  // ---------- help (F1) ----------
+  function toggleHelp() {
+    const h = $("help");
+    if (h.hidden) { closeMenu(); closeSettings(); h.hidden = false; $("help-close").focus(); }
+    else { h.hidden = true; if (currentId && !narrow()) focusEditor(); }
+  }
+  $("help-close").onclick = toggleHelp;
+  $("help").addEventListener("click", (e) => { if (e.target === $("help")) toggleHelp(); });
+  $("f-help").onclick = toggleHelp;
+  $("set-help").onclick = () => { closeSettings(); toggleHelp(); };
+  $("f-time").onclick = insertNow;
+  $("f-block").onclick = (e) => blockMenu(e.currentTarget);
+  $("f-strike").onclick = () => fmt("strikeThrough");
+  $("f-code").onclick = toggleCode;
   $("btn-login").onclick = () => { api.login(); setTimeout(renderStatus, 100); };
   $("btn-logout").onclick = async () => {
     if (confirm("구글 드라이브 연결을 해제할까? 메모는 이 기기에 남아.")) { await api.logout(); renderStatus(); }
@@ -1673,8 +2074,18 @@
     if (mod && e.key.toLowerCase() === "f") { e.preventDefault(); if (!narrow()) setSideHidden(false); search.focus(); search.select(); }
     if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); flush(); }
     if (mod && e.shiftKey && e.key.toLowerCase() === "l") { e.preventDefault(); toggleChecklist(); }
-    // Desktop app: F5 / Ctrl+R refresh the data instead of reloading the page.
-    if (window.cmStorage && (e.key === "F5" || (mod && e.key.toLowerCase() === "r"))) {
+    if (e.key === "F1") { e.preventDefault(); toggleHelp(); return; }
+    if (!$("present").hidden || !$("help").hidden) return;
+    if (e.key === "F5" && !mod) { e.preventDefault(); if (currentId) insertNow(); return; }
+    if (mod && e.altKey && /^Digit[0-9]$/.test(e.code)) { // Ctrl+Alt+0..9: line type, like Notion
+      e.preventDefault();
+      setBlock(["p", "h1", "h2", "h3", "todo", "ul", "ol", "quote", "code", "callout"][+e.code.slice(5)]);
+      return;
+    }
+    if (mod && e.shiftKey && !e.altKey && e.code === "KeyS") { e.preventDefault(); fmt("strikeThrough"); return; }
+    if (mod && !e.shiftKey && !e.altKey && e.code === "KeyE") { e.preventDefault(); toggleCode(); return; }
+    // Desktop app: Ctrl+R refreshes the data instead of reloading the page.
+    if (window.cmStorage && mod && e.key.toLowerCase() === "r") {
       e.preventDefault(); flush().then(() => { api.syncNow(); reload(); });
     }
   });

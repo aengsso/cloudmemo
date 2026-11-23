@@ -229,6 +229,76 @@ button[hidden] { display: none !important; }
 :is(#editor, #present-page) font[color="#9c36b5"] { color: var(--c-purple); }
 :is(#editor, #present-page) font[color="#868e96"] { color: var(--c-gray); }
 
+/* ---- Notion-style line types (data-b on a line) and inline marks ---- */
+:is(#editor, .present-page) { counter-reset: ol; }
+:is(#editor, .present-page) > [data-b="h1"] { font-size: 1.75em; font-weight: 700; line-height: 1.3; margin: .7em 0 .15em; }
+:is(#editor, .present-page) > [data-b="h2"] { font-size: 1.4em; font-weight: 700; line-height: 1.35; margin: .6em 0 .1em; }
+:is(#editor, .present-page) > [data-b="h3"] { font-size: 1.17em; font-weight: 650; line-height: 1.4; margin: .45em 0 .05em; }
+:is(#editor, .present-page) > [data-b^="h"]:first-child { margin-top: 0; }
+:is(#editor, .present-page) > [data-b="ul"], :is(#editor, .present-page) > [data-b="ol"] { position: relative; padding-left: 1.6em; }
+:is(#editor, .present-page) > [data-b="ul"]::before {
+  content: ""; position: absolute; left: .55em; top: .68em; width: .36em; height: .36em; border-radius: 50%; background: currentColor;
+}
+:is(#editor, .present-page) > :not([data-b="ol"]) { counter-reset: ol; }
+:is(#editor, .present-page) > [data-b="ol"] { counter-increment: ol; }
+:is(#editor, .present-page) > [data-b="ol"]::before {
+  content: counter(ol) "."; position: absolute; left: 0; width: 1.3em; text-align: right; font-variant-numeric: tabular-nums;
+}
+:is(#editor, .present-page) > [data-b="quote"] { border-left: 3px solid currentColor; padding: 0 0 0 .9em; }
+:is(#editor, .present-page) > [data-b="quote"]:not([data-b="quote"] + [data-b="quote"]) { margin-top: .25em; padding-top: .1em; }
+:is(#editor, .present-page) > [data-b="quote"]:not(:has(+ [data-b="quote"])) { margin-bottom: .25em; padding-bottom: .1em; }
+:is(#editor, .present-page) > [data-b="callout"] {
+  background: color-mix(in srgb, var(--accent) 11%, transparent); padding: 0 .9em 0 2.4em; position: relative;
+}
+:is(#editor, .present-page) > [data-b="callout"]:not([data-b="callout"] + [data-b="callout"]) {
+  border-top-left-radius: 8px; border-top-right-radius: 8px; padding-top: .55em; margin-top: .35em;
+}
+:is(#editor, .present-page) > [data-b="callout"]:not([data-b="callout"] + [data-b="callout"])::before {
+  content: "💡"; position: absolute; left: .75em; top: .55em;
+}
+:is(#editor, .present-page) > [data-b="callout"]:not(:has(+ [data-b="callout"])) {
+  border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; padding-bottom: .55em; margin-bottom: .35em;
+}
+:is(#editor, .present-page) > [data-b="code"] {
+  font-family: Consolas, "D2Coding", ui-monospace, "SF Mono", Menlo, monospace; font-size: .9em; line-height: 1.6;
+  background: color-mix(in srgb, var(--text) 6%, transparent); padding: 0 1em; tab-size: 4;
+}
+:is(#editor, .present-page) > [data-b="code"]:not([data-b="code"] + [data-b="code"]) {
+  border-top-left-radius: 6px; border-top-right-radius: 6px; padding-top: .6em; margin-top: .35em;
+}
+:is(#editor, .present-page) > [data-b="code"]:not(:has(+ [data-b="code"])) {
+  border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; padding-bottom: .6em; margin-bottom: .35em;
+}
+:is(#editor, .present-page) code {
+  font-family: Consolas, "D2Coding", ui-monospace, "SF Mono", Menlo, monospace; font-size: .88em;
+  background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--c-red);
+  padding: .1em .35em; border-radius: 4px;
+}
+:is(#editor, .present-page) > [data-b="code"] code { background: none; color: inherit; padding: 0; }
+:is(#editor, .present-page) s { opacity: .7; }
+/* F5 time stamp: a small chip with a clock */
+:is(#editor, .present-page) time {
+  display: inline-block; font-size: .86em; line-height: 1.5; padding: 0 .55em 0 .45em; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); font-weight: 500; white-space: nowrap;
+}
+:is(#editor, .present-page) time::before {
+  content: ""; display: inline-block; width: .95em; height: .95em; margin-right: .3em; vertical-align: -.12em;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='8.5' fill='none' stroke='black' stroke-width='2.2'/%3E%3Cpath d='M12 7.5V12l3 2' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='8.5' fill='none' stroke='black' stroke-width='2.2'/%3E%3Cpath d='M12 7.5V12l3 2' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.present-page { --accent: #1971c2; }
+.block-name { font-size: 13.5px; font-weight: 600; min-width: 2.6em; text-align: left; }
+
+/* header folder picker: only while the list is hidden on a wide screen */
+.browse {
+  display: none; align-items: center; gap: 5px; height: 32px; padding: 0 8px 0 9px; border-radius: 8px;
+  color: var(--text); font-size: 13.5px; max-width: 200px; border: 1px solid var(--line);
+}
+.browse span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browse svg { flex: none; color: var(--accent); }
+@media (hover: hover) { .browse:hover { background: var(--sel); } }
+
 #menu {
   position: fixed; z-index: 50; min-width: 150px; max-width: min(280px, calc(100vw - 16px));
   max-height: 60vh; overflow-y: auto; padding: 4px;
@@ -249,6 +319,31 @@ button[hidden] { display: none !important; }
 #menu .size-s3 { font-size: 15px; }
 #menu .size-s5 { font-size: 19px; }
 #menu .size-s6 { font-size: 23px; }
+#menu .menu-cap { font-size: 11.5px; color: var(--muted); padding: 6px 10px 4px; }
+#menu button.hot { background: var(--sel); }
+#menu .bi { width: 26px; flex: none; text-align: center; font-size: 13px; font-weight: 700; color: var(--muted); }
+#menu .bn, #menu .mt { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+#menu kbd, #menu small { flex: none; font: 11.5px var(--font); color: var(--muted); margin-left: 12px; }
+#menu .mt svg { vertical-align: -1px; }
+#menu { max-width: min(340px, calc(100vw - 16px)); }
+
+/* ---- help sheet (F1) ---- */
+.help { width: min(640px, 100%); max-height: calc(100dvh - 32px); }
+.help-head { display: flex; align-items: baseline; gap: 10px; }
+.help-tip { font-size: 12px; color: var(--muted); }
+.help-body { overflow-y: auto; min-height: 0; margin: 0 -4px; padding: 0 4px; display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 6px 22px; }
+.help-body h3 { font-size: 13.5px; margin: 10px 0 6px; color: var(--accent); }
+.help-body h3 small { font-weight: 400; color: var(--muted); }
+.help-body dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 0; font-size: 13px; align-items: baseline; }
+.help-body dt { white-space: nowrap; color: var(--text); }
+.help-body dd { margin: 0; color: var(--muted); }
+.help-body .help-note { font-size: 12.5px; margin: 6px 0 6px; }
+.help-body kbd {
+  font: 600 11.5px var(--font); padding: 1px 5px; border-radius: 5px; border: 1px solid var(--line);
+  border-bottom-width: 2px; background: var(--bg); color: var(--text); white-space: nowrap;
+}
+.help-body code { font: .9em Consolas, ui-monospace, monospace; color: var(--c-red); background: color-mix(in srgb, var(--text) 8%, transparent); padding: 0 .3em; border-radius: 4px; }
+.help-list { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
 
 /* ---- presentation mode: one page per divider, light and high-contrast for projectors ---- */
 #present {
@@ -399,11 +494,12 @@ button[hidden] { display: none !important; }
 .sheet-btns .text-btn { font-size: 14px; padding: 7px 14px; }
 
 #empty-state { position: absolute; inset: 0; display: none; place-items: center; color: var(--muted); }
-#app.no-memo #editor, #app.no-memo #fmt-bar, #app.no-memo .editor-head > :not(.back):not(.side-toggle) { visibility: hidden; }
+#app.no-memo #editor, #app.no-memo #fmt-bar, #app.no-memo .editor-head > :not(.back):not(.side-toggle):not(.browse) { visibility: hidden; }
 /* Wide screens: the list can be folded away to give the memo the whole window. */
 @media (min-width: 701px) {
   #app.hide-side #sidebar { display: none; }
   #app.hide-side .side-fill { opacity: 0; }
+  #app.hide-side .browse { display: inline-flex; }
 }
 #app.no-memo #empty-state { display: grid; }
 
