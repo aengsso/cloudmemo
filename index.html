@@ -17,7 +17,7 @@
 <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
 <!--WEB-ONLY-END-->
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
 <div id="app" class="show-list">
@@ -189,97 +189,105 @@
 </div>
 <div id="help" class="overlay" hidden>
   <div class="sheet help" role="dialog" aria-modal="true" aria-labelledby="help-title">
-    <div class="help-head"><h2 id="help-title">단축키와 사용법</h2><span class="help-tip">F1로 열고 닫기</span></div>
+    <div class="help-head">
+      <h2 id="help-title">도움말</h2>
+      <button type="button" class="icon-btn" id="help-close" aria-label="닫기" title="닫기 (Esc)">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+      </button>
+    </div>
+    <div class="seg help-tabs" role="tablist" aria-label="도움말 주제">
+      <button data-h="basic" role="tab">기본</button><button data-h="line" role="tab">줄 꾸미기</button><button data-h="text" role="tab">글자</button><button data-h="present" role="tab">발표</button><button data-h="tips" role="tab">팁</button>
+    </div>
     <div class="help-body">
-      <section>
-        <h3>기본</h3>
-        <dl>
-          <dt><kbd>Ctrl</kbd>+<kbd>N</kbd></dt><dd>새 메모 (일기 탭에서는 오늘 일기)</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>F</kbd></dt><dd>검색</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>S</kbd></dt><dd>지금 저장 (쓰는 대로 자동 저장돼)</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd></dt><dd>되돌리기 (<kbd>Ctrl</kbd>+<kbd>Y</kbd> 다시 하기)</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>\</kbd></dt><dd>왼쪽 메모 목록 숨기기 · 보이기</dd>
-          <dt><kbd>F5</kbd></dt><dd>지금 날짜·시간 넣기</dd>
-          <dt><kbd>F1</kbd></dt><dd>이 도움말</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>R</kbd></dt><dd>PC 앱: 드라이브와 바로 동기화</dd>
-        </dl>
+      <section data-h="basic">
+        <p class="help-lead">자주 쓰는 단축키</p>
+        <ul class="keys">
+          <li><span>새 메모</span><span class="k"><kbd>Ctrl + N</kbd></span></li>
+          <li><span>검색</span><span class="k"><kbd>Ctrl + F</kbd></span></li>
+          <li><span>되돌리기</span><span class="k"><kbd>Ctrl + Z</kbd></span></li>
+          <li><span>다시 하기</span><span class="k"><kbd>Ctrl + Y</kbd></span></li>
+          <li><span>지금 날짜·시간 넣기</span><span class="k"><kbd>F5</kbd></span></li>
+          <li><span>왼쪽 목록 숨기기·보이기</span><span class="k"><kbd>Ctrl + \</kbd></span></li>
+          <li><span>이 도움말 열기·닫기</span><span class="k"><kbd>F1</kbd></span></li>
+        </ul>
       </section>
-      <section>
-        <h3>글자 서식 <small>(글자를 드래그한 뒤)</small></h3>
-        <dl>
-          <dt><kbd>Ctrl</kbd>+<kbd>B</kbd> · <kbd>I</kbd> · <kbd>U</kbd></dt><dd>굵게 · 기울임 · 밑줄</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></dt><dd>취소선</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>E</kbd></dt><dd><code>코드</code> 글씨</dd>
-          <dt>위쪽 줄 버튼</dt><dd>글자 크기 · 색 · 형광펜 · 서식 지우기</dd>
-        </dl>
+
+      <section data-h="line" hidden>
+        <p class="help-lead">줄 맨 앞에서 입력하고 <kbd>스페이스</kbd></p>
+        <div class="md-grid">
+          <div class="md"><code>#</code><i>→</i><span class="pv pv-h1">큰 제목</span></div>
+          <div class="md"><code>##</code><i>→</i><span class="pv pv-h2">중간 제목</span></div>
+          <div class="md"><code>-</code><i>→</i><span class="pv pv-ul">글머리 목록</span></div>
+          <div class="md"><code>1.</code><i>→</i><span class="pv pv-ol">번호 목록</span></div>
+          <div class="md"><code>[]</code><i>→</i><span class="pv">☐ 체크리스트</span></div>
+          <div class="md"><code>&gt;</code><i>→</i><span class="pv pv-tg">토글 (접기)</span></div>
+          <div class="md"><code>"</code><i>→</i><span class="pv pv-q">인용</span></div>
+          <div class="md"><code>```</code><i>→</i><span class="pv pv-code">코드</span><small>스페이스 없이</small></div>
+          <div class="md"><code>---</code><i>→</i><span class="pv pv-hr"></span><small>스페이스 없이</small></div>
+        </div>
+        <p class="help-lead">이렇게 해도 돼</p>
+        <ul class="keys">
+          <li><span>메뉴에서 골라서 바꾸기</span><span class="k"><kbd>/</kbd></span></li>
+          <li><span>들여쓰기 · 내어쓰기</span><span class="k"><kbd>Tab</kbd><kbd>Shift + Tab</kbd></span></li>
+          <li><span>토글 접기 · 체크하기</span><span class="k"><kbd>Ctrl + Enter</kbd></span></li>
+          <li><span>다시 일반 글로</span><span class="k">줄 맨 앞에서 <kbd>Backspace</kbd></span></li>
+          <li><span>목록 끝내기</span><span class="k">빈 줄에서 <kbd>Enter</kbd></span></li>
+        </ul>
+        <details class="help-more">
+          <summary><kbd>Ctrl + Alt + 숫자</kbd>로 바로 바꾸기</summary>
+          <div class="num-grid">
+            <span><kbd>0</kbd>일반 글</span><span><kbd>1</kbd>큰 제목</span><span><kbd>2</kbd>중간 제목</span><span><kbd>3</kbd>작은 제목</span>
+            <span><kbd>4</kbd>체크리스트</span><span><kbd>5</kbd>글머리</span><span><kbd>6</kbd>번호</span><span><kbd>7</kbd>토글</span>
+            <span><kbd>8</kbd>코드</span><span><kbd>9</kbd>콜아웃</span>
+          </div>
+        </details>
       </section>
-      <section>
-        <h3>입력하면 바로 바뀌어</h3>
-        <p class="help-note">줄 맨 앞에서 입력하고 <kbd>스페이스</kbd>를 눌러.</p>
-        <dl>
-          <dt><kbd>#</kbd> <kbd>##</kbd> <kbd>###</kbd></dt><dd>제목 1 · 2 · 3</dd>
-          <dt><kbd>-</kbd> 또는 <kbd>*</kbd></dt><dd>글머리 기호 목록</dd>
-          <dt><kbd>1.</kbd></dt><dd>번호 매기기 목록 (번호는 알아서 붙어)</dd>
-          <dt><kbd>&gt;</kbd></dt><dd>토글 (▸ 눌러서 접기 · 펼치기)</dd>
-          <dt><kbd>"</kbd></dt><dd>인용</dd>
-          <dt><kbd>[]</kbd> · <kbd>[x]</kbd></dt><dd>체크리스트 ☐ · ☑</dd>
-          <dt><kbd>```</kbd></dt><dd>코드 블록 (스페이스 없이)</dd>
-          <dt><kbd>---</kbd></dt><dd>구분선 (스페이스 없이)</dd>
-        </dl>
-        <p class="help-note">글자 사이에서는 이렇게 감싸면 돼.</p>
-        <dl>
-          <dt><kbd>**글자**</kbd></dt><dd><b>굵게</b></dd>
-          <dt><kbd>*글자*</kbd></dt><dd><i>기울임</i></dd>
-          <dt><kbd>`글자`</kbd></dt><dd><code>코드</code></dd>
-          <dt><kbd>~~글자~~</kbd></dt><dd><s>취소선</s></dd>
-        </dl>
+
+      <section data-h="text" hidden>
+        <p class="help-lead">글자를 드래그한 뒤</p>
+        <ul class="keys">
+          <li><span><b>굵게</b></span><span class="k"><kbd>Ctrl + B</kbd></span></li>
+          <li><span><i>기울임</i></span><span class="k"><kbd>Ctrl + I</kbd></span></li>
+          <li><span><u>밑줄</u></span><span class="k"><kbd>Ctrl + U</kbd></span></li>
+          <li><span><s>취소선</s></span><span class="k"><kbd>Ctrl + Shift + S</kbd></span></li>
+          <li><span><code class="pv-c">코드</code></span><span class="k"><kbd>Ctrl + E</kbd></span></li>
+        </ul>
+        <p class="help-lead">쓰면서 바로</p>
+        <ul class="keys">
+          <li><span><b>굵게</b></span><span class="k"><code class="t">**글자**</code></span></li>
+          <li><span><i>기울임</i></span><span class="k"><code class="t">*글자*</code></span></li>
+          <li><span><code class="pv-c">코드</code></span><span class="k"><code class="t">`글자`</code></span></li>
+          <li><span><s>취소선</s></span><span class="k"><code class="t">~~글자~~</code></span></li>
+        </ul>
+        <p class="help-note">크기 · 색 · 형광펜은 메모 위쪽 버튼으로.</p>
       </section>
-      <section>
-        <h3>줄 종류 바꾸기</h3>
-        <dl>
-          <dt><kbd>/</kbd></dt><dd>메뉴에서 골라. <kbd>/제목</kbd>처럼 이어서 치면 걸러져</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>0</kbd></dt><dd>일반 텍스트로</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd>~<kbd>3</kbd></dt><dd>제목 1 · 2 · 3</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>4</kbd></dt><dd>체크리스트 (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd>도 돼)</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>5</kbd> · <kbd>6</kbd></dt><dd>글머리 기호 · 번호 목록</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>7</kbd> · <kbd>8</kbd> · <kbd>9</kbd></dt><dd>토글 · 코드 · 콜아웃</dd>
-          <dt>줄 맨 앞 <kbd>Backspace</kbd></dt><dd>다시 일반 텍스트로 (들여쓴 줄은 한 칸 밖으로)</dd>
-          <dt>빈 줄에서 <kbd>Enter</kbd></dt><dd>목록 · 인용 · 코드 끝내기</dd>
-        </dl>
+
+      <section data-h="present" hidden>
+        <p class="help-lead">메모 위쪽 화면 아이콘으로 시작</p>
+        <ul class="keys">
+          <li><span>다음 장 · 이전 장</span><span class="k"><kbd>→</kbd><kbd>←</kbd></span></li>
+          <li><span>글자 크게 · 작게</span><span class="k"><kbd>Ctrl + 휠</kbd></span></li>
+          <li><span>발표자 화면 (노트 · 다음 장)</span><span class="k"><kbd>P</kbd></span></li>
+          <li><span>끝내기</span><span class="k"><kbd>Esc</kbd></span></li>
+        </ul>
+        <ul class="tips">
+          <li><b>구분선</b>마다 한 장씩 넘어가.</li>
+          <li><code class="t">//</code>로 시작하는 줄은 <b>발표자 노트</b>야. 슬라이드에는 안 보여.</li>
+          <li>접어 둔 <b>토글</b>은 슬라이드에서 눌러서 펼칠 수 있어.</li>
+        </ul>
       </section>
-      <section>
-        <h3>들여쓰기 · 토글</h3>
-        <dl>
-          <dt><kbd>Tab</kbd></dt><dd>들여쓰기 (목록 안에 목록, 최대 4단계)</dd>
-          <dt><kbd>Shift</kbd>+<kbd>Tab</kbd></dt><dd>내어쓰기</dd>
-          <dt>토글에서 <kbd>Enter</kbd></dt><dd>토글 안쪽에 내용 쓰기 시작</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>토글 접기 · 펼치기, 체크리스트 체크</dd>
-          <dt>▸ 누르기</dt><dd>토글 접기 · 펼치기 (토글 아래 들여쓴 줄이 숨겨져)</dd>
-          <dt>발표 모드</dt><dd>메모에서 펼친 그대로 보여. 슬라이드의 토글을 누르면 그 자리에서 펼쳐져 (메모는 안 바뀌어)</dd>
-        </dl>
-      </section>
-      <section>
-        <h3>발표 모드</h3>
-        <dl>
-          <dt>위쪽 화면 아이콘</dt><dd>구분선마다 한 장씩 보여줘</dd>
-          <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>이전 장 · 다음 장</dd>
-          <dt><kbd>//</kbd>로 시작하는 줄</dt><dd>발표자 노트 (슬라이드에는 안 보여)</dd>
-          <dt><kbd>P</kbd></dt><dd>발표자 화면 (프로젝터엔 슬라이드만)</dd>
-          <dt><kbd>Ctrl</kbd>+휠 · <kbd>+</kbd> <kbd>−</kbd></dt><dd>슬라이드 글자 크기</dd>
-          <dt><kbd>Esc</kbd></dt><dd>끝내기</dd>
-        </dl>
-      </section>
-      <section>
-        <h3>알아두면 좋은 것</h3>
-        <ul class="help-list">
-          <li>첫 줄이 메모 제목이 돼.</li>
-          <li>체크박스(☐)를 누르면 체크돼. 목록 옆 숫자 5/6은 체크한 개수야.</li>
-          <li>비밀 폴더와 잠긴 일기는 비밀번호로 암호화돼. 비밀번호를 잊으면 되살릴 수 없어.</li>
-          <li>목록을 숨겨도 위쪽 폴더 버튼으로 다른 메모를 열 수 있어.</li>
+
+      <section data-h="tips" hidden>
+        <ul class="tips">
+          <li>첫 줄이 메모 <b>제목</b>이 돼.</li>
+          <li>☐를 누르면 체크돼. 목록의 <b>5/6</b>은 체크한 개수야.</li>
+          <li><b>비밀 폴더</b>와 잠긴 일기는 암호화돼. 비밀번호를 잊으면 되살릴 수 없어.</li>
+          <li>목록을 숨겨도 위쪽 <b>폴더 버튼</b>으로 다른 메모를 열 수 있어.</li>
+          <li>PC 앱에서 <kbd>Ctrl + R</kbd>을 누르면 바로 동기화돼.</li>
+          <li>PC 앱은 켤 때 인터넷이 되면 <b>새 버전</b>을 알아서 받아. 버전은 화면 설정에서 보여.</li>
         </ul>
       </section>
     </div>
-    <div class="sheet-btns"><button type="button" class="text-btn primary" id="help-close">닫기</button></div>
   </div>
 </div>
 <div id="modal" class="overlay" hidden>
@@ -296,9 +304,9 @@
   </form>
 </div>
 <!--WEB-ONLY-START-->
-<script src="config.js?v=19"></script>
-<script src="api-web.js?v=19"></script>
+<script src="config.js?v=20"></script>
+<script src="api-web.js?v=20"></script>
 <!--WEB-ONLY-END-->
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

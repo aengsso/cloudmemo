@@ -359,23 +359,60 @@ button[hidden] { display: none !important; }
 #menu .mt svg { vertical-align: -1px; }
 #menu { max-width: min(340px, calc(100vw - 16px)); }
 
-/* ---- help sheet (F1) ---- */
-.help { width: min(640px, 100%); max-height: calc(100dvh - 32px); }
-.help-head { display: flex; align-items: baseline; gap: 10px; }
-.help-tip { font-size: 12px; color: var(--muted); }
-.help-body { overflow-y: auto; min-height: 0; margin: 0 -4px; padding: 0 4px; display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 6px 22px; }
-.help-body h3 { font-size: 13.5px; margin: 10px 0 6px; color: var(--accent); }
-.help-body h3 small { font-weight: 400; color: var(--muted); }
-.help-body dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 0; font-size: 13px; align-items: baseline; }
-.help-body dt { white-space: nowrap; color: var(--text); }
-.help-body dd { margin: 0; color: var(--muted); }
-.help-body .help-note { font-size: 12.5px; margin: 6px 0 6px; }
-.help-body kbd {
-  font: 600 11.5px var(--font); padding: 1px 5px; border-radius: 5px; border: 1px solid var(--line);
-  border-bottom-width: 2px; background: var(--bg); color: var(--text); white-space: nowrap;
+/* ---- help sheet (F1): tabs, plain-language rows with keys on the right ---- */
+.help { width: min(540px, 100%); max-height: calc(100dvh - 32px); padding: 18px 20px 20px; gap: 14px; }
+.help-head { display: flex; align-items: center; justify-content: space-between; margin: -4px -6px -4px 0; }
+.help-head h2 { font-size: 19px; }
+.help-head .icon-btn { color: var(--muted); }
+.help-tabs button { font-size: 13.5px; padding: 8px 2px; white-space: nowrap; letter-spacing: -.2px; }
+@media (max-width: 420px) { .help-tabs button { font-size: 12.5px; } .help { padding: 16px 14px 16px; } }
+.help-tabs button.on { color: var(--accent); }
+.help-body { overflow-y: auto; height: min(470px, calc(100dvh - 170px)); margin: 0 -6px; padding: 0 6px 4px; }
+.help-body section[hidden] { display: none; }
+.help .help-lead { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 2px 2px 8px; }
+.help .help-lead ~ .help-lead { margin-top: 18px; }
+.help .help-note { font-size: 13px; color: var(--muted); margin: 12px 2px 0; }
+.help kbd {
+  display: inline-block; font: 600 12.5px/1.4 var(--font); padding: 2px 8px; border-radius: 6px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--line); box-shadow: 0 1px 0 var(--line);
+  white-space: nowrap;
 }
-.help-body code { font: .9em Consolas, ui-monospace, monospace; color: var(--c-red); background: color-mix(in srgb, var(--text) 8%, transparent); padding: 0 .3em; border-radius: 4px; }
-.help-list { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
+.help code.t, .help .md code {
+  font: 600 13px/1.4 Consolas, ui-monospace, "SF Mono", monospace; padding: 2px 7px; border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent); white-space: nowrap;
+}
+.help code.pv-c {
+  font: .92em Consolas, ui-monospace, monospace; color: var(--c-red); padding: 1px 6px; border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.keys { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); overflow: hidden; }
+.keys li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; font-size: 14.5px; color: var(--text); min-height: 44px; }
+.keys li + li { border-top: 1px solid var(--line); }
+.keys .k { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; font-size: 12.5px; color: var(--muted); text-align: right; }
+.md-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.md {
+  display: flex; align-items: center; gap: 10px; padding: 9px 12px; min-height: 46px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 14.5px;
+}
+.md code { min-width: 34px; text-align: center; }
+.md i { font-style: normal; color: var(--muted); }
+.md small { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.pv-h1 { font-size: 18px; font-weight: 700; }
+.pv-h2 { font-size: 16px; font-weight: 700; }
+.pv-ul::before { content: "•"; margin-right: 6px; }
+.pv-ol::before { content: "1."; margin-right: 6px; }
+.pv-tg::before { content: "▸"; margin-right: 6px; color: var(--muted); }
+.pv-q { border-left: 3px solid currentColor; padding-left: 8px; }
+.pv-code { font: 13.5px Consolas, ui-monospace, monospace; padding: 1px 8px; border-radius: 5px; background: color-mix(in srgb, var(--text) 8%, transparent); }
+.pv-hr { flex: 1; max-width: 70px; height: 1px; background: var(--text); opacity: .5; }
+.help-more { margin-top: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.help-more summary { cursor: pointer; padding: 11px 14px; font-size: 13.5px; color: var(--muted); list-style-position: inside; }
+.num-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px 10px; padding: 2px 14px 14px; font-size: 13.5px; color: var(--text); }
+.num-grid span { display: flex; align-items: center; gap: 8px; }
+.tips { margin: 14px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.tips li { position: relative; padding: 11px 14px 11px 34px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font-size: 14px; line-height: 1.55; color: var(--text); }
+.tips li::before { content: ""; position: absolute; left: 15px; top: 19px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+section[data-h="tips"] .tips { margin-top: 0; }
 
 /* ---- presentation mode: one page per divider, light and high-contrast for projectors ---- */
 #present {

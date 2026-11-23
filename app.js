@@ -2248,6 +2248,26 @@
     if (h.hidden) { closeMenu(); closeSettings(); h.hidden = false; $("help-close").focus(); }
     else { h.hidden = true; if (currentId && !narrow()) focusEditor(); }
   }
+  function helpTab(name) {
+    for (const b of document.querySelectorAll(".help-tabs button")) {
+      const on = b.dataset.h === name;
+      b.classList.toggle("on", on); b.setAttribute("aria-selected", on);
+    }
+    for (const s of document.querySelectorAll(".help-body section")) s.hidden = s.dataset.h !== name;
+    $("help").querySelector(".help-body").scrollTop = 0;
+  }
+  helpTab("basic");
+  document.querySelector(".help-tabs").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-h]");
+    if (b) helpTab(b.dataset.h);
+  });
+  $("help").addEventListener("keydown", (e) => { // ← → switch tabs
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const tabs = [...document.querySelectorAll(".help-tabs button")];
+    const i = tabs.findIndex((b) => b.classList.contains("on"));
+    const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+    helpTab(n.dataset.h); n.focus();
+  });
   $("help-close").onclick = toggleHelp;
   $("help").addEventListener("click", (e) => { if (e.target === $("help")) toggleHelp(); });
   $("f-help").onclick = toggleHelp;
