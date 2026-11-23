@@ -230,7 +230,7 @@ button[hidden] { display: none !important; }
 :is(#editor, #present-page) font[color="#868e96"] { color: var(--c-gray); }
 
 /* ---- Notion-style line types (data-b on a line) and inline marks ---- */
-:is(#editor, .present-page) { counter-reset: ol; }
+:is(#editor, .present-page) { counter-reset: ol0 ol1 ol2 ol3 ol4; }
 :is(#editor, .present-page) > [data-b="h1"] { font-size: 1.75em; font-weight: 700; line-height: 1.3; margin: .7em 0 .15em; }
 :is(#editor, .present-page) > [data-b="h2"] { font-size: 1.4em; font-weight: 700; line-height: 1.35; margin: .6em 0 .1em; }
 :is(#editor, .present-page) > [data-b="h3"] { font-size: 1.17em; font-weight: 650; line-height: 1.4; margin: .45em 0 .05em; }
@@ -239,11 +239,43 @@ button[hidden] { display: none !important; }
 :is(#editor, .present-page) > [data-b="ul"]::before {
   content: ""; position: absolute; left: .55em; top: .68em; width: .36em; height: .36em; border-radius: 50%; background: currentColor;
 }
-:is(#editor, .present-page) > :not([data-b="ol"]) { counter-reset: ol; }
-:is(#editor, .present-page) > [data-b="ol"] { counter-increment: ol; }
+/* Numbered lists count per indent level; a line at a level restarts the deeper levels. */
+:is(#editor, .present-page) > :not([data-i]) { counter-reset: ol0 ol1 ol2 ol3 ol4; }
+:is(#editor, .present-page) > [data-b="ol"]:not([data-i]) { counter-reset: ol1 ol2 ol3 ol4; counter-increment: ol0; }
+:is(#editor, .present-page) > [data-i="1"] { counter-reset: ol1 ol2 ol3 ol4; }
+:is(#editor, .present-page) > [data-b="ol"][data-i="1"] { counter-reset: ol2 ol3 ol4; counter-increment: ol1; }
+:is(#editor, .present-page) > [data-i="2"] { counter-reset: ol2 ol3 ol4; }
+:is(#editor, .present-page) > [data-b="ol"][data-i="2"] { counter-reset: ol3 ol4; counter-increment: ol2; }
+:is(#editor, .present-page) > [data-i="3"] { counter-reset: ol3 ol4; }
+:is(#editor, .present-page) > [data-b="ol"][data-i="3"] { counter-reset: ol4; counter-increment: ol3; }
+:is(#editor, .present-page) > [data-i="4"] { counter-reset: ol4; }
+:is(#editor, .present-page) > [data-b="ol"][data-i="4"] { counter-reset: none; counter-increment: ol4; }
 :is(#editor, .present-page) > [data-b="ol"]::before {
-  content: counter(ol) "."; position: absolute; left: 0; width: 1.3em; text-align: right; font-variant-numeric: tabular-nums;
+  content: counter(ol0) "."; position: absolute; left: 0; width: 1.3em; text-align: right; font-variant-numeric: tabular-nums;
 }
+:is(#editor, .present-page) > [data-b="ol"][data-i="1"]::before { content: counter(ol1, lower-alpha) "."; }
+:is(#editor, .present-page) > [data-b="ol"][data-i="2"]::before { content: counter(ol2, lower-roman) "."; }
+:is(#editor, .present-page) > [data-b="ol"][data-i="3"]::before { content: counter(ol3) "."; }
+:is(#editor, .present-page) > [data-b="ol"][data-i="4"]::before { content: counter(ol4, lower-alpha) "."; }
+/* Indent: each level moves the line 1.6em right. */
+:is(#editor, .present-page) > [data-i="1"] { margin-left: 1.6em; }
+:is(#editor, .present-page) > [data-i="2"] { margin-left: 3.2em; }
+:is(#editor, .present-page) > [data-i="3"] { margin-left: 4.8em; }
+:is(#editor, .present-page) > [data-i="4"] { margin-left: 6.4em; }
+/* Bullets change shape by level: ● ○ ■ */
+:is(#editor, .present-page) > [data-b="ul"]:is([data-i="1"], [data-i="4"])::before { background: none; border: 1.5px solid currentColor; box-sizing: border-box; }
+:is(#editor, .present-page) > [data-b="ul"][data-i="2"]::before { border-radius: 1px; }
+/* Toggle: ▸ arrow in the left padding; folded lines are hidden. */
+:is(#editor, .present-page) > [data-b="toggle"] { position: relative; padding-left: 1.6em; }
+:is(#editor, .present-page) > [data-b="toggle"]::before {
+  content: ""; position: absolute; left: .45em; top: .5em; cursor: pointer;
+  border-left: .52em solid var(--muted); border-top: .32em solid transparent; border-bottom: .32em solid transparent;
+  transform: rotate(90deg); transform-origin: 35% 50%; transition: transform .12s;
+}
+:is(#editor, .present-page) > [data-b="toggle"][data-c="1"]::before { transform: none; }
+#editor > [data-b="toggle"]:hover::before { border-left-color: var(--accent); }
+.present-page > [data-b="toggle"] { cursor: pointer; }
+#editor > .folded { display: none; }
 :is(#editor, .present-page) > [data-b="quote"] { border-left: 3px solid currentColor; padding: 0 0 0 .9em; }
 :is(#editor, .present-page) > [data-b="quote"]:not([data-b="quote"] + [data-b="quote"]) { margin-top: .25em; padding-top: .1em; }
 :is(#editor, .present-page) > [data-b="quote"]:not(:has(+ [data-b="quote"])) { margin-bottom: .25em; padding-bottom: .1em; }

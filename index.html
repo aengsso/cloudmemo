@@ -15,7 +15,7 @@
 <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
 <!--WEB-ONLY-END-->
-<link rel="stylesheet" href="style.css?v=17">
+<link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
 <div id="app" class="show-list">
@@ -130,6 +130,12 @@
       <button id="btn-check" class="fmt" title="체크리스트 (Ctrl+Shift+L)" aria-label="체크리스트">
         <svg viewBox="0 0 24 24" width="19" height="19"><rect x="3.5" y="3.5" width="17" height="17" rx="4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8 12.2l2.7 2.7L16 9.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
       </button>
+      <button id="f-outdent" class="fmt" title="내어쓰기 (Shift+Tab)" aria-label="내어쓰기">
+        <svg viewBox="0 0 24 24" width="19" height="19"><path d="M4 5.5h16M11 10h9M11 14h9M4 18.5h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M7.5 9.5L4.5 12l3 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+      <button id="f-indent" class="fmt" title="들여쓰기 (Tab)" aria-label="들여쓰기">
+        <svg viewBox="0 0 24 24" width="19" height="19"><path d="M4 5.5h16M11 10h9M11 14h9M4 18.5h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M4.5 9.5l3 2.5-3 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </button>
       <button id="f-time" class="fmt" title="지금 날짜·시간 넣기 (F5)" aria-label="지금 날짜와 시간 넣기">
         <svg viewBox="0 0 24 24" width="19" height="19"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
       </button>
@@ -211,7 +217,8 @@
           <dt><kbd>#</kbd> <kbd>##</kbd> <kbd>###</kbd></dt><dd>제목 1 · 2 · 3</dd>
           <dt><kbd>-</kbd> 또는 <kbd>*</kbd></dt><dd>글머리 기호 목록</dd>
           <dt><kbd>1.</kbd></dt><dd>번호 매기기 목록 (번호는 알아서 붙어)</dd>
-          <dt><kbd>&gt;</kbd> 또는 <kbd>"</kbd></dt><dd>인용</dd>
+          <dt><kbd>&gt;</kbd></dt><dd>토글 (▸ 눌러서 접기 · 펼치기)</dd>
+          <dt><kbd>"</kbd></dt><dd>인용</dd>
           <dt><kbd>[]</kbd> · <kbd>[x]</kbd></dt><dd>체크리스트 ☐ · ☑</dd>
           <dt><kbd>```</kbd></dt><dd>코드 블록 (스페이스 없이)</dd>
           <dt><kbd>---</kbd></dt><dd>구분선 (스페이스 없이)</dd>
@@ -232,9 +239,20 @@
           <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd>~<kbd>3</kbd></dt><dd>제목 1 · 2 · 3</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>4</kbd></dt><dd>체크리스트 (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd>도 돼)</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>5</kbd> · <kbd>6</kbd></dt><dd>글머리 기호 · 번호 목록</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>7</kbd> · <kbd>8</kbd> · <kbd>9</kbd></dt><dd>인용 · 코드 · 콜아웃</dd>
-          <dt>줄 맨 앞 <kbd>Backspace</kbd></dt><dd>다시 일반 텍스트로</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>7</kbd> · <kbd>8</kbd> · <kbd>9</kbd></dt><dd>토글 · 코드 · 콜아웃</dd>
+          <dt>줄 맨 앞 <kbd>Backspace</kbd></dt><dd>다시 일반 텍스트로 (들여쓴 줄은 한 칸 밖으로)</dd>
           <dt>빈 줄에서 <kbd>Enter</kbd></dt><dd>목록 · 인용 · 코드 끝내기</dd>
+        </dl>
+      </section>
+      <section>
+        <h3>들여쓰기 · 토글</h3>
+        <dl>
+          <dt><kbd>Tab</kbd></dt><dd>들여쓰기 (목록 안에 목록, 최대 4단계)</dd>
+          <dt><kbd>Shift</kbd>+<kbd>Tab</kbd></dt><dd>내어쓰기</dd>
+          <dt>토글에서 <kbd>Enter</kbd></dt><dd>토글 안쪽에 내용 쓰기 시작</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>토글 접기 · 펼치기, 체크리스트 체크</dd>
+          <dt>▸ 누르기</dt><dd>토글 접기 · 펼치기 (토글 아래 들여쓴 줄이 숨겨져)</dd>
+          <dt>발표 모드</dt><dd>메모에서 펼친 그대로 보여. 슬라이드의 토글을 누르면 그 자리에서 펼쳐져 (메모는 안 바뀌어)</dd>
         </dl>
       </section>
       <section>
@@ -275,9 +293,9 @@
   </form>
 </div>
 <!--WEB-ONLY-START-->
-<script src="config.js?v=17"></script>
-<script src="api-web.js?v=17"></script>
+<script src="config.js?v=18"></script>
+<script src="api-web.js?v=18"></script>
 <!--WEB-ONLY-END-->
-<script src="app.js?v=17"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>

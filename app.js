@@ -63,7 +63,7 @@
   }
 
   // ---------- body <-> DOM ----------
-  const BLOCK = new Set(["DIV", "P", "LI", "UL", "OL", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "PRE"]);
+  const BLOCK = new Set(["DIV", "P", "LI", "UL", "OL", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "PRE", "DETAILS", "SUMMARY"]);
   // Text lines of a DOM tree: each block is a line, <br> breaks a line.
   function linesOf(root) {
     const lines = [];
@@ -127,15 +127,29 @@
   const TAGS = { B: "B", STRONG: "B", I: "I", EM: "I", U: "U", FONT: "FONT", SPAN: "SPAN", MARK: "SPAN",
                  S: "S", STRIKE: "S", DEL: "S", CODE: "CODE", TIME: "TIME",
                  BR: "BR", HR: "HR", DIV: "DIV", P: "DIV",
-                 LI: "DIV", H1: "DIV", H2: "DIV", H3: "DIV", H4: "DIV", H5: "DIV", H6: "DIV", BLOCKQUOTE: "DIV", PRE: "DIV" };
+                 LI: "DIV", H1: "DIV", H2: "DIV", H3: "DIV", H4: "DIV", H5: "DIV", H6: "DIV", BLOCKQUOTE: "DIV", PRE: "DIV",
+                 SUMMARY: "DIV" };
   const DROP = new Set(["SCRIPT", "STYLE", "TEMPLATE", "IFRAME", "OBJECT", "EMBED", "SVG", "MATH", "IMG", "VIDEO",
                         "AUDIO", "CANVAS", "INPUT", "TEXTAREA", "SELECT", "BUTTON", "HEAD", "TITLE", "META", "LINK"]);
   // Notion-style line types, kept as data-b on the line's <div> (headings, lists, quote, ...).
-  const BTYPES = new Set(["h1", "h2", "h3", "ul", "ol", "quote", "callout", "code"]);
+  const BTYPES = new Set(["h1", "h2", "h3", "ul", "ol", "quote", "callout", "code", "toggle"]);
+  // Indent level of a line (data-i, 1..MAX_IND): nested lists and toggle contents.
+  const MAX_IND = 4;
+  function indentOf(n) {
+    const v = Math.floor(+n.getAttribute("data-i"));
+    if (v >= 1 && v <= MAX_IND) return v;
+    if (n.nodeName === "LI") { // pasted nested lists: depth of the surrounding <ul>/<ol>
+      let d = -1;
+      for (let p = n.parentNode; p && p.nodeType === 1; p = p.parentNode) if (p.nodeName === "UL" || p.nodeName === "OL") d++;
+      return Math.max(0, Math.min(MAX_IND, d));
+    }
+    return 0;
+  }
   function blockTypeOf(n) {
     const b = n.getAttribute("data-b");
     if (BTYPES.has(b)) return b;
     switch (n.nodeName) {
+      case "SUMMARY": return "toggle";
       case "H1": return "h1";
       case "H2": return "h2";
       case "H3": case "H4": case "H5": case "H6": return "h3";
@@ -153,7 +167,12 @@
       const tag = TAGS[n.nodeName];
       if (!tag || (tag === "CODE" && n.parentNode && n.parentNode.closest && n.parentNode.closest("pre"))) { cleanInto(n, dst); continue; }
       const el = document.createElement(tag);
-      if (tag === "DIV") { const b = blockTypeOf(n); if (b) el.dataset.b = b; }
+      if (tag === "DIV") {
+        const b = blockTypeOf(n), ind = indentOf(n);
+        if (b) el.dataset.b = b;
+        if (ind) el.dataset.i = ind;
+        if (b === "toggle" && n.getAttribute("data-c") === "1") el.dataset.c = "1";
+      }
       if (tag === "TIME") { const d = n.getAttribute("datetime"); if (/^[\d\-T:]{4,19}$/.test(d || "")) el.setAttribute("datetime", d); }
       if (tag === "FONT") {
         const c = normColor(n.getAttribute("color"));
@@ -196,15 +215,21 @@
   function splitLines(root) {
     const out = document.createDocumentFragment();
     let cur = document.createElement("div"), open = []; // open: [original inline element, its clone in cur]
-    let type = ""; // line type (data-b) of the block being walked; its lines keep it
+    // Line attributes (type, indent, folded) of the block being walked; its lines keep them.
+    let at = { b: "", i: 0, c: "" };
+    const stamp = () => {
+      if (at.b && !cur.dataset.b) cur.dataset.b = at.b;
+      if (at.i && !cur.dataset.i) cur.dataset.i = at.i;
+      if (at.c && at.b === "toggle" && !cur.dataset.c) cur.dataset.c = at.c;
+    };
     const filled = () => cur.childNodes.length > 0;
     const push = () => {
       if (!cur.firstChild) cur.appendChild(document.createElement("br"));
-      if (type && !cur.dataset.b) cur.dataset.b = type;
+      stamp();
       out.appendChild(cur); cur = document.createElement("div"); open = [];
     };
     const place = (node, stack) => { // put node into cur under clones of its inline ancestors
-      if (type && !cur.firstChild) cur.dataset.b = type;
+      if (!cur.firstChild) stamp();
       let k = 0;
       while (k < open.length && k < stack.length && open[k][0] === stack[k]) k++;
       open.length = k;
@@ -224,12 +249,11 @@
         else if (c.nodeName === "HR") { if (filled()) push(); out.appendChild(document.createElement("hr")); }
         else if (BLOCK.has(c.nodeName)) {
           if (filled()) push();
-          const outer = type;
-          type = (c.nodeName === "DIV" ? c.getAttribute("data-b") : blockTypeOf(c)) || outer;
-          if (!BTYPES.has(type)) type = outer;
+          const outer = at, b = blockTypeOf(c), i = indentOf(c);
+          at = { b: b || outer.b, i: i || outer.i, c: b ? c.getAttribute("data-c") || "" : outer.c };
           walk(c, []);
           if (filled()) push();
-          type = outer;
+          at = outer;
         }
         else walk(c, [...stack, c]);
       }
@@ -266,7 +290,7 @@
     if (!root.firstChild) root.appendChild(Object.assign(document.createElement("div"), { innerHTML: "<br>" }));
   }
 
-  const RICH = "b,i,u,font,strong,em,hr,mark,s,strike,del,code,time,div[data-b],h1,h2,h3,h4,h5,h6,blockquote,pre,li";
+  const RICH = "b,i,u,font,strong,em,hr,mark,s,strike,del,code,time,div[data-b],div[data-i],summary,h1,h2,h3,h4,h5,h6,blockquote,pre,li";
   const hasRich = (root) => !!root.querySelector(RICH) ||
     [...root.querySelectorAll("span[style]")].some((s) => normHighlight(s.style.backgroundColor));
   function serialize() {
@@ -291,6 +315,7 @@
     }
     normalizeTop(frag);
     editor.replaceChildren(hasMergedLines(frag) ? splitLines(frag) : frag);
+    applyFolds();
     shownBody = stored;
     savedBody = serialize();
     updateEmpty();
@@ -971,13 +996,63 @@
     { t: "ul", n: "글머리 기호 목록", s: "글머리", ic: "•", kb: "- 스페이스", k: "bullet ul list 글머리 기호 목록 리스트 점" },
     { t: "ol", n: "번호 매기기 목록", s: "번호", ic: "1.", kb: "1. 스페이스", k: "number numbered ol list 번호 숫자 목록" },
     { t: "todo", n: "체크리스트", s: "체크", ic: "☐", kb: "[] 스페이스", k: "todo check checklist 체크리스트 할일 할 일" },
-    { t: "quote", n: "인용", s: "인용", ic: "❝", kb: "> 스페이스", k: "quote blockquote 인용 말머리" },
+    { t: "toggle", n: "토글 목록", s: "토글", ic: "▸", kb: "> 스페이스", k: "toggle 토글 접기 펼치기 접는 목록" },
+    { t: "quote", n: "인용", s: "인용", ic: "❝", kb: "\" 스페이스", k: "quote blockquote 인용 말머리" },
     { t: "callout", n: "콜아웃", s: "콜아웃", ic: "💡", kb: "Ctrl+Alt+9", k: "callout 콜아웃 강조 박스 상자 말머리 메모 알림" },
     { t: "code", n: "코드", s: "코드", ic: "</>", kb: "``` 입력", k: "code 코드 프로그램" },
     { t: "hr", n: "구분선", s: "구분선", ic: "―", kb: "--- 입력", k: "divider hr line 구분선 줄 선" },
   ];
   const blockOf = (line) => (line && line.dataset && BTYPES.has(line.dataset.b) ? line.dataset.b : "");
-  const setType = (line, t) => { if (BTYPES.has(t)) line.dataset.b = t; else line.removeAttribute("data-b"); };
+  const setType = (line, t) => {
+    if (BTYPES.has(t)) line.dataset.b = t; else line.removeAttribute("data-b");
+    if (t !== "toggle") line.removeAttribute("data-c");
+  };
+
+  // ---------- indent (Tab / Shift+Tab) ----------
+  const indOf = (l) => (l && l.dataset ? +l.dataset.i || 0 : 0);
+  const setInd = (l, n) => { n = Math.max(0, Math.min(MAX_IND, n)); if (n) l.dataset.i = n; else l.removeAttribute("data-i"); };
+  function indent(delta) {
+    if (!currentId) return;
+    focusEditor(); ensureLines(); fixLines();
+    const lines = selectedLines().filter((l) => l.nodeName === "DIV");
+    if (!lines.length) return;
+    const pos = sel().isCollapsed ? caretPos() : null;
+    lines.forEach((l) => setInd(l, indOf(l) + delta));
+    if (pos) restoreCaret(pos);
+    afterEdit();
+  }
+
+  // ---------- toggles: a toggle line folds the lines indented under it ----------
+  // data-c="1" on a toggle = folded (saved with the memo). Hidden lines get the "folded" class.
+  function foldedSet(lines, isClosed) {
+    const hidden = new Set();
+    let hideAbove = -1;
+    for (const l of lines) {
+      const i = indOf(l);
+      if (hideAbove >= 0 && i > hideAbove) { hidden.add(l); continue; }
+      hideAbove = -1;
+      if (l.dataset && l.dataset.b === "toggle" && isClosed(l)) hideAbove = i;
+    }
+    return hidden;
+  }
+  function applyFolds() {
+    if (composing) return;
+    const hidden = foldedSet([...editor.children], (l) => l.dataset.c === "1");
+    for (const l of editor.children) l.classList.toggle("folded", hidden.has(l));
+    if (!editor.querySelector(".folded")) return;
+    // Never leave the caret inside a hidden line.
+    const c = caretLine();
+    if (c && c.line.classList.contains("folded")) {
+      let t = c.line;
+      while (t && t.classList.contains("folded")) t = t.previousElementSibling;
+      if (t) caretAt(t, t.textContent.length);
+    }
+  }
+  function toggleFold(line) {
+    if (line.dataset.c === "1") line.removeAttribute("data-c"); else line.dataset.c = "1";
+    applyFolds();
+    afterEdit();
+  }
   // Turns the selected lines into a type ("p" = plain text). Pressing the same type again
   // (e.g. Ctrl+Alt+1 on a heading) turns it back into text.
   function setBlock(t) {
@@ -1025,7 +1100,7 @@
   }
 
   // Typed shortcuts at the start of a line, finished with a space: "# " → heading, "- " → bullet, ...
-  const MD_BLOCKS = [[/^#$/, "h1"], [/^##$/, "h2"], [/^###$/, "h3"], [/^[-*+•]$/, "ul"], [/^\d{1,3}[.)]$/, "ol"], [/^[>"“”]$/, "quote"]];
+  const MD_BLOCKS = [[/^#$/, "h1"], [/^##$/, "h2"], [/^###$/, "h3"], [/^[-*+•]$/, "ul"], [/^\d{1,3}[.)]$/, "ol"], [/^>$/, "toggle"], [/^["“”]$/, "quote"]];
   function caretLine() {
     const s = sel();
     if (!s.isCollapsed || !inEditor()) return null;
@@ -1215,10 +1290,13 @@
     const line = inEditor() ? lineOf(sel().anchorNode) : null;
     const t = line ? line.textContent : "";
     const bt = blockOf(line);
-    // Enter on an empty list/quote/code line ends it (back to plain text), like Notion.
-    if (bt && e.inputType === "insertParagraph" && !t.replace(ZW, "").trim() && bt !== "h1" && bt !== "h2" && bt !== "h3") {
+    // Enter on an empty list/quote/code line: first back out one indent level, then end it
+    // (back to plain text), like Notion.
+    const empty = line && !t.replace(ZW, "").trim() && e.inputType === "insertParagraph";
+    if (empty && (bt || indOf(line)) && bt !== "h1" && bt !== "h2" && bt !== "h3") {
       e.preventDefault();
-      setType(line, "");
+      if (indOf(line) && (CONTINUES.has(bt) || !bt)) setInd(line, indOf(line) - 1);
+      else setType(line, "");
       afterEdit(); updateBlockState();
       return;
     }
@@ -1239,7 +1317,7 @@
     }
     boxNext = !!m;
     enterFix = line ? {
-      type: bt, shift: e.inputType === "insertLineBreak",
+      type: bt, ind: indOf(line), shift: e.inputType === "insertLineBreak",
       atStart: !!t.replace(ZW, "").trim() && lineOffset(line, sel().anchorNode, sel().anchorOffset) === 0,
     } : null;
     if (e.inputType === "insertLineBreak") { // Shift+Enter: keep one line per block
@@ -1253,10 +1331,20 @@
     const line = inEditor() ? lineOf(sel().anchorNode) : null;
     if (enterFix && line) {
       const f = enterFix, keep = f.shift || CONTINUES.has(f.type);
+      const prev = line.previousElementSibling;
       if (f.atStart) { // the browser added an empty line above; the caret line is the original
         setType(line, f.type);
-        if (line.previousElementSibling && !keep) setType(line.previousElementSibling, "");
-      } else setType(line, keep ? f.type : "");
+        if (prev && !keep) setType(prev, "");
+        if (prev) prev.removeAttribute("data-c");
+      } else if (f.type === "toggle" && !f.shift) {
+        // Enter on a toggle opens it and starts its first line inside, like Notion.
+        setType(line, "");
+        setInd(line, f.ind + 1);
+        if (prev && prev.dataset.b === "toggle") prev.removeAttribute("data-c");
+      } else {
+        setType(line, keep ? f.type : "");
+        line.removeAttribute("data-c");
+      }
     }
     enterFix = null;
     if (boxNext) {
@@ -1360,7 +1448,7 @@
   const pres = {
     on: false, pages: [], i: 0, ownFullscreen: false, hintTimer: null,
     aud: null, audWatch: null, t0: 0, clock: null, dpr: 1,
-    scale: PRESENT_SCALE,
+    scale: PRESENT_SCALE, flip: new Set(),
   };
   const isBlankLine = (l) => !l.textContent.trim() && !l.querySelector("hr");
   const isBreakLine = (l) => l.nodeName === "HR" || (!!l.querySelector("hr") && !l.textContent.trim());
@@ -1379,9 +1467,13 @@
   function renderSlide(page, idx) {
     page.replaceChildren();
     const notes = [];
+    // Toggles show as they are in the memo; clicking one on the slide flips it for this
+    // presentation only (pres.flip), so an answer can be revealed live.
+    const closed = (l) => (l.dataset.c === "1") !== pres.flip.has([...editor.children].indexOf(l));
+    const hidden = foldedSet(idx.map((i) => editor.children[i]).filter(Boolean), closed);
     for (const i of idx) {
       const line = editor.children[i];
-      if (!line) continue;
+      if (!line || hidden.has(line)) continue;
       if (isNoteLine(line)) { notes.push(line.textContent.replace(/^\s*\/\/\s?/, "")); continue; }
       const tmp = document.createElement("div");
       tmp.appendChild(line.cloneNode(true));
@@ -1390,6 +1482,7 @@
       const el = page.childNodes[before];
       if (el && el.nodeType === 1) {
         el.dataset.line = i;
+        if (el.dataset.b === "toggle") { if (closed(line)) el.dataset.c = "1"; else el.removeAttribute("data-c"); }
         const c = el.textContent[0];
         if (c === OPEN || c === DONE) el.classList.add("box-line", ...(c === DONE ? ["done"] : []));
       }
@@ -1438,6 +1531,7 @@
     pres.i = Math.max(0, caretLine ? pages.findIndex((p) => p.includes(caretLine.i)) : 0);
     pres.on = true;
     pres.scale = PRESENT_SCALE;
+    pres.flip = new Set();
     pres.dpr = devicePixelRatio;
     editor.blur();
     $("present").hidden = false;
@@ -1596,6 +1690,13 @@
     if (e.target.closest(".presenter-side, .present-bar")) return;
     const box = e.target.closest("#present-page .box-line");
     if (box) { toggleBoxLine(+box.dataset.line); return; }
+    const tg = e.target.closest('#present-page [data-b="toggle"]');
+    if (tg) {
+      const i = +tg.dataset.line;
+      if (pres.flip.has(i)) pres.flip.delete(i); else pres.flip.add(i);
+      renderPage();
+      return;
+    }
     if (!pres.aud) goPage(pres.i + (e.clientX < innerWidth / 3 ? -1 : 1)); // tap left third: back, elsewhere: next
   });
   let touchX = null;
@@ -1705,6 +1806,7 @@
   }
   function afterEdit() {
     updateEmpty();
+    applyFolds();
     clearTimeout(saveTimer);
     saveTimer = setTimeout(flush, 400);
   }
@@ -1886,12 +1988,26 @@
   });
   editor.addEventListener("keydown", (e) => {
     if (slashKey(e)) return;
-    // Backspace at the very start of a heading/list/quote line turns it back into plain text.
-    if (e.key === "Backspace" && !e.isComposing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (e.isComposing) return;
+    // Tab / Shift+Tab: indent / outdent the selected lines.
+    if (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); indent(e.shiftKey ? -1 : 1); return; }
+    // Ctrl+Enter: fold/unfold a toggle, or check/uncheck a checklist item.
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       const c = caretLine();
-      if (c && blockOf(c.line) && c.off === 0) {
+      if (!c) return;
+      e.preventDefault();
+      if (blockOf(c.line) === "toggle") { toggleFold(c.line); return; }
+      const ch = c.line.textContent[0];
+      if (ch === OPEN || ch === DONE) { run(() => editLine(c.line, 0, 1, ch === OPEN ? DONE : OPEN)); caretAt(c.line, c.off); afterEdit(); }
+      return;
+    }
+    // Backspace at the very start of a line: a heading/list/quote line turns back into plain
+    // text; a plain indented line moves one level out.
+    if (e.key === "Backspace" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const c = caretLine();
+      if (c && c.off === 0 && (blockOf(c.line) || indOf(c.line))) {
         e.preventDefault();
-        setType(c.line, "");
+        if (blockOf(c.line)) setType(c.line, ""); else setInd(c.line, indOf(c.line) - 1);
         afterEdit(); updateBlockState();
       }
     }
@@ -1932,6 +2048,15 @@
     afterEdit();
   });
   editor.addEventListener("click", toggleBoxAtCaret);
+  // Clicking the ▸ arrow of a toggle (its left padding) folds / unfolds it.
+  editor.addEventListener("mousedown", (e) => {
+    const line = e.target.nodeType === 1 ? lineOf(e.target) : null;
+    if (!line || blockOf(line) !== "toggle") return;
+    const r = line.getBoundingClientRect(), pad = parseFloat(getComputedStyle(line).paddingLeft) || 0;
+    if (e.clientX >= r.left + pad) return;
+    e.preventDefault();
+    toggleFold(line);
+  });
   editor.addEventListener("blur", () => { composing = false; flush(); }); // a lost compositionend must not block saving
   search.addEventListener("input", renderList);
   $("btn-new").onclick = newMemo;
@@ -2062,6 +2187,8 @@
   $("f-block").onclick = (e) => blockMenu(e.currentTarget);
   $("f-strike").onclick = () => fmt("strikeThrough");
   $("f-code").onclick = toggleCode;
+  $("f-indent").onclick = () => indent(1);
+  $("f-outdent").onclick = () => indent(-1);
   $("btn-login").onclick = () => { api.login(); setTimeout(renderStatus, 100); };
   $("btn-logout").onclick = async () => {
     if (confirm("구글 드라이브 연결을 해제할까? 메모는 이 기기에 남아.")) { await api.logout(); renderStatus(); }
@@ -2079,7 +2206,7 @@
     if (e.key === "F5" && !mod) { e.preventDefault(); if (currentId) insertNow(); return; }
     if (mod && e.altKey && /^Digit[0-9]$/.test(e.code)) { // Ctrl+Alt+0..9: line type, like Notion
       e.preventDefault();
-      setBlock(["p", "h1", "h2", "h3", "todo", "ul", "ol", "quote", "code", "callout"][+e.code.slice(5)]);
+      setBlock(["p", "h1", "h2", "h3", "todo", "ul", "ol", "toggle", "code", "callout"][+e.code.slice(5)]);
       return;
     }
     if (mod && e.shiftKey && !e.altKey && e.code === "KeyS") { e.preventDefault(); fmt("strikeThrough"); return; }
