@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>클라우드 메모</title>
+<!-- PC app: uses this page from the site when cm-native is at most its own level (see update.go). -->
+<meta name="cm-native" content="1">
 <!--WEB-ONLY-START-->
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -15,7 +17,7 @@
 <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
 <!--WEB-ONLY-END-->
-<link rel="stylesheet" href="style.css?v=18">
+<link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
 <div id="app" class="show-list">
@@ -181,7 +183,7 @@
     <div class="themes" id="set-theme" role="radiogroup" aria-label="테마"></div>
     <div class="set-label">강조색</div>
     <div class="accents" id="set-accent" role="radiogroup" aria-label="강조색"></div>
-    <p class="set-note">이 기기에만 저장돼. 메모 내용에는 영향 없어.</p>
+    <p class="set-note">이 기기에만 저장돼. 메모 내용에는 영향 없어. <span id="set-ver"></span></p>
     <div class="sheet-btns"><button type="button" class="text-btn" id="set-help">단축키·사용법</button><button type="button" class="text-btn primary" id="set-close">완료</button></div>
   </div>
 </div>
@@ -195,6 +197,7 @@
           <dt><kbd>Ctrl</kbd>+<kbd>N</kbd></dt><dd>새 메모 (일기 탭에서는 오늘 일기)</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>F</kbd></dt><dd>검색</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>S</kbd></dt><dd>지금 저장 (쓰는 대로 자동 저장돼)</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Z</kbd></dt><dd>되돌리기 (<kbd>Ctrl</kbd>+<kbd>Y</kbd> 다시 하기)</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>\</kbd></dt><dd>왼쪽 메모 목록 숨기기 · 보이기</dd>
           <dt><kbd>F5</kbd></dt><dd>지금 날짜·시간 넣기</dd>
           <dt><kbd>F1</kbd></dt><dd>이 도움말</dd>
@@ -293,9 +296,9 @@
   </form>
 </div>
 <!--WEB-ONLY-START-->
-<script src="config.js?v=18"></script>
-<script src="api-web.js?v=18"></script>
+<script src="config.js?v=19"></script>
+<script src="api-web.js?v=19"></script>
 <!--WEB-ONLY-END-->
-<script src="app.js?v=18"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

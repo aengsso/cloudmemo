@@ -319,6 +319,52 @@
     shownBody = stored;
     savedBody = serialize();
     updateEmpty();
+    resetHistory();
+  }
+
+  // ---------- undo / redo ----------
+  // The app keeps its own history of editor states: many edits here (typed shortcuts, line
+  // types, indent, toggles) change the DOM directly, which the browser's own undo can't follow.
+  // Each entry is the editor after a step; typing in a row is merged into one step.
+  const TEXT_KINDS = new Set(["insertText", "insertCompositionText", "deleteContentBackward", "deleteContentForward"]);
+  let hist = [], histAt = -1;
+  function snapshot(kind) {
+    const p = document.activeElement === editor ? caretPos() : null;
+    return { html: editor.innerHTML, caret: p, kind, t: Date.now() };
+  }
+  function resetHistory() { hist = [snapshot("base")]; histAt = 0; }  function record(kind = "op") {
+    if (histAt < 0) resetHistory();
+    const top = hist[histAt], html = editor.innerHTML;
+    if (top.html === html) { top.caret = (document.activeElement === editor && caretPos()) || top.caret; return; }
+    hist.length = histAt + 1; // a new change drops the redo steps
+    const s = snapshot(kind);
+    if (histAt > 0 && TEXT_KINDS.has(kind) && top.kind === kind && s.t - top.t < 1500) hist[histAt] = s;
+    else { hist.push(s); histAt++; }
+    if (hist.length > 300) { hist.shift(); histAt--; }
+  }
+  function restoreState(s) {
+    closeMenu();
+    editor.innerHTML = s.html;
+    if (!editor.firstChild) editor.innerHTML = "<div><br></div>";
+    editor.focus({ preventScroll: true });
+    if (s.caret) restoreCaret(s.caret);
+    else { const l = editor.lastElementChild; caretAt(l, l.textContent.length); }
+    updateEmpty(); applyFolds(); updateBlockState();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flush, 400);
+  }
+  function undo() {
+    if (!currentId || composing) return;
+    record(); // keep the latest typing as its own step first
+    if (histAt <= 0) return;
+    histAt--;
+    // Put the caret where the undone change was.
+    restoreState({ ...hist[histAt], caret: hist[histAt + 1].caret || hist[histAt].caret });
+  }
+  function redo() {
+    if (!currentId || composing || histAt >= hist.length - 1) return;
+    histAt++;
+    restoreState(hist[histAt]);
   }
   function updateEmpty() {
     editor.classList.toggle("empty", editor.textContent === "" && editor.children.length <= 1);
@@ -1432,7 +1478,14 @@
       ACCENTS.map((a) => `<button class="acc${look.accent === a ? " on" : ""}" data-accent="${a}" style="background:${a}" aria-label="${a}" role="radio" aria-checked="${look.accent === a}"></button>`).join("") +
       `<label class="acc pick${custom ? " on" : ""}" title="직접 고르기"><input type="color" id="set-pick" value="${look.accent || "#c8861a"}" aria-label="강조색 직접 고르기"></label>`;
   }
-  function openSettings() { renderSettings(); $("settings").hidden = false; }
+  // Screen version: the ?v= of app.js on the web, data-ver set by the PC app (which inlines it).
+  const UI_VER = document.documentElement.dataset.ver ||
+    ((document.querySelector('script[src*="app.js"]') || {}).src || "").replace(/^.*[?&]v=(\d+).*$|^.*$/, "$1");
+  function openSettings() {
+    renderSettings();
+    $("set-ver").textContent = UI_VER ? `· 버전 ${UI_VER}` : "";
+    $("settings").hidden = false;
+  }
   function closeSettings() { $("settings").hidden = true; }
   applyLook();
   matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyLook);
@@ -1804,9 +1857,10 @@
     memos.unshift(m);
     renderList(); renderDiary(); renderEditor();
   }
-  function afterEdit() {
+  function afterEdit(kind = "op") {
     updateEmpty();
     applyFolds();
+    if (!composing) record(kind);
     clearTimeout(saveTimer);
     saveTimer = setTimeout(flush, 400);
   }
@@ -1961,11 +2015,14 @@
     setTimeout(() => {
       if (composing) return;
       if (!editor.firstChild || editor.firstChild.nodeType === 3) ensureLines();
-      afterEdit();
+      afterEdit("insertText");
     }, 0);
   });
   editor.addEventListener("beforeinput", (e) => {
     if (busy) return;
+    // Undo/redo from menus or gestures (e.g. shaking an iPhone) use the app's history too.
+    if (e.inputType === "historyUndo") { e.preventDefault(); undo(); return; }
+    if (e.inputType === "historyRedo") { e.preventDefault(); redo(); return; }
     if (slash && e.inputType === "insertParagraph") { e.preventDefault(); slashPick(slash.i); return; }
     if (composing || e.isComposing) return;
     if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") onEnter(e);
@@ -1976,19 +2033,31 @@
     if (composing || e.isComposing) return; // handled on compositionend
     if (e.inputType === "insertParagraph") { afterParagraph(); return; }
     if (!editor.firstChild || editor.firstChild.nodeType === 3) ensureLines();
+    let kind = e.inputType;
     if (e.inputType === "insertText" && e.data) {
       const ch = e.data.slice(-1);
-      if (ch === " ") { autoBox(); autoBlock(" "); }
-      else if (ch === "`") { if (!autoBlock("`")) autoInline("`"); }
-      else if (ch === "-") autoBlock("-");
-      else if (ch === "*" || ch === "~") autoInline(ch);
+      if (" `-*~".includes(ch)) {
+        record(kind); // the typed characters are a step of their own: undo brings back "- " etc.
+        const before = editor.innerHTML;
+        if (ch === " ") { autoBox(); autoBlock(" "); }
+        else if (ch === "`") { if (!autoBlock("`")) autoInline("`"); }
+        else if (ch === "-") autoBlock("-");
+        else autoInline(ch);
+        if (editor.innerHTML !== before) kind = "op";
+      }
       updateBlockState();
     }
-    afterEdit();
+    afterEdit(kind);
   });
   editor.addEventListener("keydown", (e) => {
     if (slashKey(e)) return;
     if (e.isComposing) return;
+    // Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo (by key position, so it works in Korean input mode too).
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.code === "KeyZ" || e.code === "KeyY")) {
+      e.preventDefault();
+      if (e.code === "KeyY" || e.shiftKey) redo(); else undo();
+      return;
+    }
     // Tab / Shift+Tab: indent / outdent the selected lines.
     if (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); indent(e.shiftKey ? -1 : 1); return; }
     // Ctrl+Enter: fold/unfold a toggle, or check/uncheck a checklist item.
@@ -2196,11 +2265,11 @@
   $("btn-sync").onclick = async () => { await flush(); api.syncNow(); setTimeout(renderStatus, 100); };
   document.addEventListener("keydown", (e) => {
     const mod = e.ctrlKey || e.metaKey;
-    if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); newMemo(); }
+    if (mod && e.code === "KeyN") { e.preventDefault(); newMemo(); }
     if (mod && e.key === "\\") { e.preventDefault(); if (!narrow()) setSideHidden(!app.classList.contains("hide-side")); }
-    if (mod && e.key.toLowerCase() === "f") { e.preventDefault(); if (!narrow()) setSideHidden(false); search.focus(); search.select(); }
-    if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); flush(); }
-    if (mod && e.shiftKey && e.key.toLowerCase() === "l") { e.preventDefault(); toggleChecklist(); }
+    if (mod && e.code === "KeyF") { e.preventDefault(); if (!narrow()) setSideHidden(false); search.focus(); search.select(); }
+    if (mod && e.code === "KeyS") { e.preventDefault(); flush(); }
+    if (mod && e.shiftKey && e.code === "KeyL") { e.preventDefault(); toggleChecklist(); }
     if (e.key === "F1") { e.preventDefault(); toggleHelp(); return; }
     if (!$("present").hidden || !$("help").hidden) return;
     if (e.key === "F5" && !mod) { e.preventDefault(); if (currentId) insertNow(); return; }
@@ -2212,7 +2281,7 @@
     if (mod && e.shiftKey && !e.altKey && e.code === "KeyS") { e.preventDefault(); fmt("strikeThrough"); return; }
     if (mod && !e.shiftKey && !e.altKey && e.code === "KeyE") { e.preventDefault(); toggleCode(); return; }
     // Desktop app: Ctrl+R refreshes the data instead of reloading the page.
-    if (window.cmStorage && mod && e.key.toLowerCase() === "r") {
+    if (window.cmStorage && mod && e.code === "KeyR") {
       e.preventDefault(); flush().then(() => { api.syncNow(); reload(); });
     }
   });
