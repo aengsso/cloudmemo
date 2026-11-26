@@ -735,7 +735,14 @@
   // Diary lock: entries are encrypted with the secret-folder password. It is on when any
   // entry is encrypted (so it follows sync), or when turned on here before any entry exists.
   const DIARY_LOCK_KEY = "cloudmemo.diaryLock";
-  const diaryLocked = () => lsGet(DIARY_LOCK_KEY, false) || memos.some((m) => isDiary(m) && isLocked(m.body));
+  // Locked when any entry is encrypted: that reaches every device through Drive. The device's own
+  // flag only covers the moment there is nothing written yet; once entries come in unencrypted
+  // (the lock was lifted on another device), the flag no longer counts.
+  const diaryLocked = () => {
+    const ds = memos.filter(isDiary);
+    if (ds.some((m) => isLocked(m.body))) return true;
+    return !!lsGet(DIARY_LOCK_KEY, false) && !ds.some((m) => plain(m.body || "").trim());
+  };
   async function lockDiaryOn() {
     if (!(await unlockVault())) return;
     if (!confirm("일기를 모두 비밀번호로 잠글까?\n비밀 폴더와 같은 비밀번호를 써. 비밀번호를 잊으면 일기를 되살릴 수 없어.")) return;
@@ -3529,8 +3536,21 @@
   // Screen version: the ?v= of app.js on the web, data-ver set by the PC app (which inlines it).
   const UI_VER = document.documentElement.dataset.ver ||
     ((document.querySelector('script[src*="app.js"]') || {}).src || "").replace(/^.*[?&]v=(\d+).*$|^.*$/, "$1");
+  // Settings: the Google Calendar switch (the same as the diary calendar's ⋯ → 구글 캘린더 일정 보기).
+  function renderCalSetting() {
+    const c = calAPI();
+    $("set-cal-row").hidden = !c;
+    $("set-cal").checked = cal.on;
+    $("set-cal-note").textContent = !cal.on ? "일기 달력 아래에 그날 일정을 보여 줘. 기기마다 따로 켜야 해."
+      : cal.granted ? "켜져 있어. 일기 달력 아래에 그날 일정이 보여."
+      : "켜져 있어. 구글 로그인 화면에서 캘린더 권한을 허용하면 보여.";
+  }
+  async function setCalendarOn(on) {
+    if (on) { await calConnect(); renderCalSetting(); return; }
+    cal.on = false; lsSet(CAL_ON_KEY, false); renderDiary(); renderCalSetting();
+  }
   function openSettings() {
-    renderSettings(); renderWxSettings();
+    renderSettings(); renderWxSettings(); renderCalSetting();
     $("set-ver").textContent = UI_VER ? `· 버전 ${UI_VER}` : "";
     $("settings").querySelector(".sheet").scrollTop = 0;
     $("settings").hidden = false;
@@ -4422,6 +4442,7 @@
     else if (b.dataset.accent != null) { look.accent = b.dataset.accent; saveLook(); }
   });
   $("ph-clean").onclick = cleanPhotos;
+  $("set-cal").onchange = (e) => setCalendarOn(e.target.checked);
   $("wx-q").addEventListener("input", wxSearchInput);
   $("wx-res").addEventListener("click", (e) => { const b = e.target.closest("button[data-wxi]"); if (b) setWxLoc(wxFound[+b.dataset.wxi]); });
   $("wx-cur").addEventListener("click", (e) => { if (e.target.closest("#wx-off")) setWxLoc(null); });
