@@ -670,6 +670,34 @@ section[data-h="tips"] .tips { margin-top: 0; }
 .diary-list .s { color: var(--muted); font-size: 13px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .diary-list .none { color: var(--muted); text-align: center; padding: 24px 8px; cursor: default; font-size: 13px; }
 #editor.diary.empty > div:first-child::before { content: "오늘 하루는 어땠어?"; }
+/* Diary weather: a soft chip on the entry's first line; the placeholder moves to the line below. */
+#editor.empty > div:first-child:has([data-wx])::before { content: none; }
+#editor.diary.empty > div:first-child:has([data-wx]) + div::before {
+  content: "오늘 하루는 어땠어?"; color: var(--muted); position: absolute; pointer-events: none;
+}
+:is(#editor, .present-page) [data-wx] {
+  display: inline-block; font-size: .86em; line-height: 1.6; padding: 0 .7em; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 11%, transparent); color: var(--text); white-space: nowrap;
+  cursor: pointer; user-select: none; -webkit-user-select: none;
+}
+.wx-set { display: flex; flex-direction: column; gap: 6px; }
+.wx-cur { display: flex; align-items: center; gap: 8px; font-size: 14px; min-height: 28px; }
+.wx-cur small, .wx-res small, .wx-set .muted { color: var(--muted); font-size: 12.5px; }
+.wx-cur .text-btn { margin-left: auto; }
+.wx-row { display: flex; gap: 6px; }
+.wx-row input {
+  flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--bg); color: var(--text); font: inherit; font-size: 14px;
+}
+.wx-here {
+  flex: none; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; font-size: 13.5px; color: var(--text);
+}
+.wx-here:disabled { opacity: .5; }
+.wx-res { display: flex; flex-direction: column; }
+.wx-res:empty { display: none; }
+.wx-res button { text-align: left; padding: 7px 10px; border-radius: 8px; font-size: 14px; color: var(--text); }
+.wx-res button:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.wx-res p { margin: 4px 2px; }
 
 .settings { width: min(420px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; }
 .set-label { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-top: 6px; }

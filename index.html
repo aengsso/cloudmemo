@@ -17,7 +17,7 @@
 <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
 <!--WEB-ONLY-END-->
-<link rel="stylesheet" href="style.css?v=52">
+<link rel="stylesheet" href="style.css?v=54">
 </head>
 <body>
 <div id="app" class="show-list">
@@ -197,6 +197,15 @@
     <div class="themes" id="set-theme" role="radiogroup" aria-label="테마"></div>
     <div class="set-label">강조색</div>
     <div class="accents" id="set-accent" role="radiogroup" aria-label="강조색"></div>
+    <div class="set-label">일기 날씨 위치</div>
+    <div class="wx-set">
+      <div class="wx-cur" id="wx-cur"></div>
+      <div class="wx-row">
+        <input id="wx-q" type="search" placeholder="도시 이름 (예: 서울, 부산)" autocomplete="off" aria-label="날씨 위치 도시 검색">
+        <button type="button" class="wx-here" id="wx-here">📍 현재 위치</button>
+      </div>
+      <div class="wx-res" id="wx-res"></div>
+    </div>
     <p class="set-note">이 기기에만 저장돼. 메모 내용에는 영향 없어. <span id="set-ver"></span></p>
     <div class="sheet-btns"><button type="button" class="text-btn" id="set-help">단축키·사용법</button><button type="button" class="text-btn primary" id="set-close">완료</button></div>
   </div>
@@ -336,9 +345,9 @@
   </form>
 </div>
 <!--WEB-ONLY-START-->
-<script src="config.js?v=52"></script>
-<script src="api-web.js?v=52"></script>
+<script src="config.js?v=54"></script>
+<script src="api-web.js?v=54"></script>
 <!--WEB-ONLY-END-->
-<script src="app.js?v=52"></script>
+<script src="app.js?v=54"></script>
 </body>
 </html>

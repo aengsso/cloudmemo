@@ -76,6 +76,7 @@
           parts.forEach((p, i) => { if (i) { lines.push(cur ?? ""); cur = null; } if (p || i) cur = (cur ?? "") + p; });
         } else if (c.nodeName === "BR") { lines.push(cur ?? ""); cur = null; }
         else if (c.nodeName === "IMG") cur = (cur ?? "") + "📷"; // same mark as remote.go
+        else if (c.nodeType === 1 && c.hasAttribute("data-wx")) continue; // weather chip: not text
         else if (c.nodeName === "HR") { end(); lines.push("―――"); }
         else if (BLOCK.has(c.nodeName)) { end(); walk(c); end(); }
         else if (c.nodeType === 1) walk(c);
@@ -162,6 +163,18 @@
   }
   const ZW = /​/g; // zero-width space used to step out of inline code/bold made by typing
   const IMG_ID = /^[0-9a-f]{24}$/; // photo ids (images.go / api-web.js)
+  // Diary weather chip: <span data-wx="WMO code,min,max">. Its label is rebuilt from the data,
+  // and it is left out of the memo's plain text (titles, search, "is it empty").
+  const WX_RE = /^\d{1,2},-?\d{1,3},-?\d{1,3}$/;
+  const WX = { 0: ["☀️", "맑음"], 1: ["🌤️", "대체로 맑음"], 2: ["⛅", "구름 조금"], 3: ["☁️", "흐림"], 45: ["🌫️", "안개"], 48: ["🌫️", "안개"],
+    51: ["🌦️", "이슬비"], 53: ["🌦️", "이슬비"], 55: ["🌦️", "이슬비"], 56: ["🌧️", "어는 비"], 57: ["🌧️", "어는 비"],
+    61: ["🌧️", "비"], 63: ["🌧️", "비"], 65: ["🌧️", "많은 비"], 66: ["🌧️", "어는 비"], 67: ["🌧️", "어는 비"],
+    71: ["🌨️", "눈"], 73: ["🌨️", "눈"], 75: ["❄️", "많은 눈"], 77: ["🌨️", "싸락눈"], 80: ["🌦️", "소나기"], 81: ["🌦️", "소나기"],
+    82: ["⛈️", "강한 소나기"], 85: ["🌨️", "눈 소나기"], 86: ["🌨️", "눈 소나기"], 95: ["⛈️", "뇌우"], 96: ["⛈️", "뇌우"], 99: ["⛈️", "뇌우"] };
+  function wxLabel(v) {
+    const [c, lo, hi] = v.split(",").map(Number), w = WX[c] || ["🌡️", "날씨"];
+    return `${w[0]} ${w[1]} · 최저 ${lo}° 최고 ${hi}°`;
+  }
   function cleanInto(src, dst) {
     for (const n of src.childNodes) {
       if (n.nodeType === 3) { const v = n.nodeValue.replace(ZW, ""); if (v) dst.appendChild(document.createTextNode(v)); continue; }
@@ -191,6 +204,12 @@
         const s = n.getAttribute("size");
         if (/^[1-7]$/.test(s || "")) el.setAttribute("size", s);
         if (!el.attributes.length) { cleanInto(n, dst); continue; }
+      }
+      if (tag === "SPAN" && WX_RE.test(n.getAttribute("data-wx") || "")) {
+        const v = n.getAttribute("data-wx");
+        el.setAttribute("data-wx", v); el.textContent = wxLabel(v);
+        dst.appendChild(el);
+        continue;
       }
       if (tag === "SPAN") { // only highlighter spans survive (<mark> from other pages → yellow)
         const h = n.nodeName === "MARK" ? HIGHLIGHTS[0].v : normHighlight(n.style && n.style.backgroundColor);
@@ -302,7 +321,7 @@
     if (!root.firstChild) root.appendChild(Object.assign(document.createElement("div"), { innerHTML: "<br>" }));
   }
 
-  const RICH = "b,i,u,font,strong,em,hr,mark,s,strike,del,code,time,img[data-img],div[data-b],div[data-i],summary,h1,h2,h3,h4,h5,h6,blockquote,pre,li";
+  const RICH = "b,i,u,font,strong,em,hr,mark,s,strike,del,code,time,img[data-img],span[data-wx],div[data-b],div[data-i],summary,h1,h2,h3,h4,h5,h6,blockquote,pre,li";
   const hasRich = (root) => !!root.querySelector(RICH) ||
     [...root.querySelectorAll("span[style]")].some((s) => normHighlight(s.style.backgroundColor));
   function serialize() {
@@ -380,7 +399,9 @@
     restoreState(hist[histAt]);
   }
   function updateEmpty() {
-    editor.classList.toggle("empty", editor.textContent === "" && editor.children.length <= 1 && !editor.querySelector("img"));
+    const first = editor.firstElementChild, wx = first && first.querySelector("[data-wx]") ? first : null;
+    const len = editor.textContent.length - (wx ? wx.textContent.length : 0);
+    editor.classList.toggle("empty", len === 0 && editor.children.length <= (wx ? 2 : 1) && !editor.querySelector("img"));
   }
 
   // ---------- text helpers ----------
@@ -1553,6 +1574,7 @@
     if (narrow()) showEditor();
     editor.focus();
     caretAt(editor.firstElementChild, 0);
+    if (wxLoc) putWeather(m.id, date, wxLoc, false);
   }
 
   // ---------- caret helpers ----------
@@ -1792,6 +1814,7 @@
 
   // ---------- line types (Notion-style blocks) ----------
   // ic: icon in menus, kb: shortcut shown in menus, k: search words for the "/" menu.
+  const WX_ITEM = { t: "wx", n: "날씨", s: "날씨", ic: "☀", kb: "일기", k: "weather 날씨 기온 온도" };
   const BLOCK_LIST = [
     { t: "p", n: "텍스트", s: "본문", ic: "T", kb: "Ctrl+Alt+0", k: "text 텍스트 본문 일반 p" },
     { t: "h1", n: "제목 1", s: "제목1", ic: "H1", kb: "# 스페이스", k: "h1 heading 제목1 제목 1 큰제목" },
@@ -2010,7 +2033,9 @@
   }
   function slashRender(q) {
     const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const items = BLOCK_LIST.filter((b) => words.every((w) => (b.n + " " + b.k).toLowerCase().includes(w)));
+    const cur = memos.find((x) => x.id === currentId);
+    const pool = cur && cur.diary ? [...BLOCK_LIST, WX_ITEM] : BLOCK_LIST;
+    const items = pool.filter((b) => words.every((w) => (b.n + " " + b.k).toLowerCase().includes(w)));
     if (!items.length) { closeMenu(); return; }
     slash.items = items;
     slash.i = Math.min(slash.i, items.length - 1);
@@ -2037,6 +2062,7 @@
     focusEditor();
     run(() => editLine(line, start, end, ""));
     caretAt(line, start);
+    if (b.t === "wx") { afterEdit(); weatherSlash(); return; }
     if (b.t === "hr" && !line.textContent.trim()) {
       run(() => { editLine(line, 0, line.textContent.length, ""); document.execCommand("insertHorizontalRule"); });
       fixAfterDivider(); afterEdit();
@@ -2073,6 +2099,139 @@
     putInline(t, " ");
     afterEdit();
   }
+  // ---------- diary weather ----------
+  // Open-Meteo (free, no key, callable from the page). The place is per device: a city picked in
+  // settings, or the current position. The weather is saved in the entry, so old entries keep theirs.
+  const WX_KEY = "cloudmemo.weather";
+  let wxLoc = lsGet(WX_KEY, null); // { name, sub, lat, lon } or null (off)
+  const wxCache = new Map();
+  async function getJSON(url) {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000);
+    try { const r = await fetch(url, { signal: ctl.signal }); return r.ok ? await r.json() : null; }
+    catch (e) { return null; } finally { clearTimeout(t); }
+  }
+  async function fetchWeather(date, loc) {
+    const diff = Math.round((new Date(date + "T12:00") - new Date(ymd(new Date()) + "T12:00")) / 864e5);
+    if (diff > 15) return null; // further out than the forecast
+    const key = `${date}|${loc.lat}|${loc.lon}`;
+    if (wxCache.has(key)) return wxCache.get(key);
+    const host = diff >= -60 ? "https://api.open-meteo.com/v1/forecast" : "https://archive-api.open-meteo.com/v1/archive";
+    const j = await getJSON(`${host}?latitude=${loc.lat}&longitude=${loc.lon}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&start_date=${date}&end_date=${date}`);
+    const d = (j && j.daily) || {}, c = d.weather_code && d.weather_code[0];
+    const hi = d.temperature_2m_max && d.temperature_2m_max[0], lo = d.temperature_2m_min && d.temperature_2m_min[0];
+    if (c == null || hi == null || lo == null) return null;
+    const v = `${c},${Math.round(lo) || 0},${Math.round(hi) || 0}`;
+    wxCache.set(key, v);
+    return v;
+  }
+  // Open-Meteo's search knows few Korean city names in Korean ("서울" finds nothing), so Korean
+  // cities come from this list first; the rest of the world comes from the search.
+  const KR_CITIES = ("서울 서울특별시 37.57 126.98|부산 부산광역시 35.18 129.08|대구 대구광역시 35.87 128.60|인천 인천광역시 37.46 126.71|" +
+    "광주 광주광역시 35.16 126.85|대전 대전광역시 36.35 127.38|울산 울산광역시 35.54 129.31|세종 세종특별자치시 36.48 127.29|" +
+    "수원 경기도 37.26 127.03|성남 경기도 37.42 127.13|고양 경기도 37.66 126.83|용인 경기도 37.24 127.18|부천 경기도 37.50 126.78|" +
+    "안산 경기도 37.32 126.83|안양 경기도 37.39 126.92|남양주 경기도 37.64 127.22|화성 경기도 37.20 126.83|평택 경기도 36.99 127.09|" +
+    "의정부 경기도 37.74 127.03|파주 경기도 37.76 126.78|김포 경기도 37.62 126.72|시흥 경기도 37.38 126.80|광명 경기도 37.48 126.86|" +
+    "하남 경기도 37.54 127.21|춘천 강원도 37.88 127.73|원주 강원도 37.34 127.92|강릉 강원도 37.75 128.88|속초 강원도 38.21 128.59|" +
+    "청주 충청북도 36.64 127.49|충주 충청북도 36.99 127.93|천안 충청남도 36.82 127.11|아산 충청남도 36.79 127.00|" +
+    "전주 전라북도 35.82 127.15|군산 전라북도 35.97 126.74|익산 전라북도 35.95 126.96|목포 전라남도 34.81 126.39|" +
+    "여수 전라남도 34.76 127.66|순천 전라남도 34.95 127.49|포항 경상북도 36.02 129.34|경주 경상북도 35.86 129.22|" +
+    "구미 경상북도 36.12 128.34|안동 경상북도 36.57 128.73|창원 경상남도 35.23 128.68|김해 경상남도 35.23 128.89|" +
+    "진주 경상남도 35.18 128.11|통영 경상남도 34.85 128.43|거제 경상남도 34.88 128.62|제주 제주특별자치도 33.50 126.53|" +
+    "서귀포 제주특별자치도 33.25 126.56").split("|").map((r) => { const [name, sub, lat, lon] = r.split(" "); return { name, sub, lat: +lat, lon: +lon }; });
+  async function geoSearch(q) {
+    const key = q.replace(/\s+/g, "").replace(/(특별자치시|특별자치도|특별시|광역시|시)$/, "");
+    const local = key ? KR_CITIES.filter((c) => c.name.startsWith(key) || c.sub.startsWith(key)).slice(0, 6) : [];
+    const j = await getJSON(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=10&language=ko&format=json`);
+    const far = ((j && j.results) || [])
+      .filter((x) => !/^K[RP]$/.test(x.country_code) || (x.population || 0) > 100000) // Korean villages that share a city's name
+      .sort((a, b) => (b.population || 0) - (a.population || 0))
+      .map((x) => ({ name: x.name, sub: [x.admin1 !== x.name ? x.admin1 : "", x.country].filter(Boolean).join(" "),
+        lat: +(+x.latitude).toFixed(2), lon: +(+x.longitude).toFixed(2) }))
+      .filter((x) => !local.some((c) => Math.abs(c.lat - x.lat) < 0.2 && Math.abs(c.lon - x.lon) < 0.2));
+    return [...local, ...far].slice(0, 6);
+  }
+  function herePosition() { // rounded to about 1 km
+    return new Promise((res, rej) => {
+      if (!navigator.geolocation) { rej(new Error("no geolocation")); return; }
+      navigator.geolocation.getCurrentPosition(
+        (p) => res({ name: "현재 위치", sub: "", lat: +p.coords.latitude.toFixed(2), lon: +p.coords.longitude.toFixed(2) }),
+        rej, { timeout: 10000, maximumAge: 600000 });
+    });
+  }
+  function wxChip(v) {
+    const s = document.createElement("span");
+    s.dataset.wx = v; s.textContent = wxLabel(v); s.contentEditable = "false";
+    return s;
+  }
+  // Weather of `date` as the entry's first line (replace: also when it already has one).
+  async function putWeather(id, date, loc, replace) {
+    const v = await fetchWeather(date, loc);
+    if (!v || id !== currentId) return v;
+    const old = editor.querySelector("[data-wx]");
+    if (old && !replace) return v;
+    const untouched = serialize() === savedBody && !linesOf(editor).join("").trim() && !editor.querySelector("img");
+    if (old) old.replaceWith(wxChip(v));
+    else { const line = document.createElement("div"); line.appendChild(wxChip(v)); editor.prepend(line); }
+    if (untouched) { savedBody = serialize(); resetHistory(); updateEmpty(); } // a weather-only entry is still "empty"
+    else afterEdit();
+    return v;
+  }
+  function weatherFor(loc) {
+    const m = memos.find((x) => x.id === currentId);
+    if (!m || !m.diary) return;
+    flashMeta("날씨 받아오는 중…");
+    putWeather(m.id, m.diary, loc, true).then((v) => flashMeta(v ? `${loc.name} 날씨를 넣었어` : "그날 날씨를 못 받아왔어"));
+  }
+  async function weatherHere() {
+    try { weatherFor(await herePosition()); }
+    catch (e) { flashMeta("위치를 못 가져왔어. 설정에서 도시를 골라 줘"); }
+  }
+  function weatherMenu(chip) {
+    const m = memos.find((x) => x.id === currentId), diary = m && m.diary;
+    openMenu(chip, [
+      ...(diary && wxLoc ? [{ label: `${wxLoc.name} 날씨로 다시 받기`, onPick: () => weatherFor(wxLoc) }] : []),
+      ...(diary ? [{ label: "📍 현재 위치 날씨로 바꾸기", onPick: weatherHere }] : []),
+      ...(diary ? ["-"] : []),
+      { label: "날씨 지우기", danger: true, onPick: () => {
+        const line = lineOf(chip);
+        chip.remove();
+        if (line && !line.textContent && !line.querySelector("img") && editor.children.length > 1) line.remove();
+        afterEdit();
+      } },
+    ]);
+  }
+  // "/날씨" in a diary entry: add (or refresh) the weather.
+  function weatherSlash() {
+    if (wxLoc) weatherFor(wxLoc);
+    else flashMeta("설정에서 날씨 위치를 먼저 골라 줘");
+  }
+  // Settings: the place for the weather.
+  function renderWxSettings() {
+    $("wx-cur").innerHTML = wxLoc
+      ? `<span>☀️ <b>${esc(wxLoc.name)}</b>${wxLoc.sub ? ` <small>${esc(wxLoc.sub)}</small>` : ""}</span><button type="button" class="text-btn" id="wx-off">끄기</button>`
+      : `<span class="muted">꺼져 있어. 고르면 새 일기 맨 위에 그날 날씨가 들어가.</span>`;
+  }
+  function setWxLoc(loc) {
+    wxLoc = loc; lsSet(WX_KEY, loc);
+    $("wx-q").value = ""; $("wx-res").innerHTML = "";
+    renderWxSettings();
+  }
+  let wxFound = [], wxTimer = null, wxSeq = 0;
+  function wxSearchInput() {
+    clearTimeout(wxTimer);
+    const q = $("wx-q").value.trim();
+    if (!q) { $("wx-res").innerHTML = ""; return; }
+    wxTimer = setTimeout(async () => {
+      const seq = ++wxSeq;
+      const found = await geoSearch(q);
+      if (seq !== wxSeq) return;
+      wxFound = found;
+      $("wx-res").innerHTML = found.length
+        ? found.map((x, i) => `<button type="button" data-wxi="${i}">${esc(x.name)} <small>${esc(x.sub)}</small></button>`).join("")
+        : `<p class="muted">못 찾았어. 다른 이름으로 해 볼래?</p>`;
+    }, 350);
+  }
+
   // ---------- photos ----------
   // A memo keeps <img data-img="ID"> only; the picture (shrunk here first) is stored by the
   // backend (images.go / api-web.js) and synced to Drive "CloudMemo/사진". src is runtime only.
@@ -2086,6 +2245,7 @@
     return photoURL.get(id);
   }
   function hydratePhotos(root) {
+    if (root) for (const w of root.querySelectorAll("[data-wx]")) w.contentEditable = "false"; // weather chip: tap for its menu
     if (!canPhoto() || !root) return;
     for (const img of root.querySelectorAll("img[data-img]")) {
       if (img.getAttribute("src")) continue;
@@ -2340,7 +2500,7 @@
   const UI_VER = document.documentElement.dataset.ver ||
     ((document.querySelector('script[src*="app.js"]') || {}).src || "").replace(/^.*[?&]v=(\d+).*$|^.*$/, "$1");
   function openSettings() {
-    renderSettings();
+    renderSettings(); renderWxSettings();
     $("set-ver").textContent = UI_VER ? `· 버전 ${UI_VER}` : "";
     $("settings").hidden = false;
   }
@@ -2982,6 +3142,7 @@
     afterEdit();
   });
   editor.addEventListener("click", toggleBoxAtCaret);
+  editor.addEventListener("click", (e) => { const w = e.target.closest && e.target.closest("[data-wx]"); if (w && editor.contains(w)) weatherMenu(w); });
   // Tapping a photo: cover photo for the month page (diary), move up/down (phones can't drag), delete.
   editor.addEventListener("click", (e) => {
     const img = e.target && e.target.nodeName === "IMG" && e.target.dataset.img ? e.target : null;
@@ -3136,6 +3297,15 @@
     else if (b.dataset.theme != null) { look.theme = b.dataset.theme; look.accent = ""; saveLook(); }
     else if (b.dataset.accent != null) { look.accent = b.dataset.accent; saveLook(); }
   });
+  $("wx-q").addEventListener("input", wxSearchInput);
+  $("wx-res").addEventListener("click", (e) => { const b = e.target.closest("button[data-wxi]"); if (b) setWxLoc(wxFound[+b.dataset.wxi]); });
+  $("wx-cur").addEventListener("click", (e) => { if (e.target.closest("#wx-off")) setWxLoc(null); });
+  $("wx-here").onclick = async () => {
+    $("wx-here").disabled = true;
+    try { const p = await herePosition(); setWxLoc({ ...p, sub: `${p.lat}, ${p.lon}` }); }
+    catch (e) { $("wx-res").innerHTML = `<p class="muted">위치를 못 가져왔어. 위치 권한을 켜거나 도시 이름으로 찾아 줘.</p>`; }
+    $("wx-here").disabled = false;
+  };
   $("settings").addEventListener("input", (e) => {
     if (e.target.id === "set-pick") { look.accent = e.target.value.toLowerCase(); try { prefStore.setItem(LOOK_KEY, JSON.stringify(look)); } catch (x) {} applyLook(); }
   });

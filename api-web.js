@@ -83,6 +83,7 @@
     return body.slice(HTML_MARKER.length)
       .replace(/<br\s*\/?>|<\/(div|p|li|h[1-6])>/gi, "\n")
       .replace(/<img\b[^>]*>/gi, "📷") // a photo-only memo isn't blank (same as remote.go)
+      .replace(/<span\b[^>]*\bdata-wx=[^>]*>[\s\S]*?<\/span>/gi, "") // diary weather chip: not text
       .replace(/<!--[\s\S]*?-->|<[^>]*>/g, "")
       .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (m, e) => {
         if (e[0] === "#") return String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : +e.slice(1));
