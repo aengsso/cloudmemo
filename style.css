@@ -1,7 +1,9 @@
 /* Keepsake — an airmail look: thin blue-white letter paper, post-office blue ink, and the red/blue
    airmail stripe as the one bold mark (top of the sidebar, the icon, the sign-in page).
-   Theme = background hue/tint (--h, --t) + accent (--ah, --as, lightness --al light / --al-d dark).
-   Presets set only these numbers (html[data-theme]); a custom accent sets --ah/--as/--al inline.
+   Theme = background hue/tint (--h, --t) + theme color (--ah, --as, lightness --al light / --al-d dark),
+   which is --accent (buttons, the filled diary days). The second color (--a2 / --a2-d, the airmail red)
+   is --accent-2: the stripe and today's ring. Presets set only these numbers (html[data-theme]); a
+   custom theme (data-theme="custom") or a picked second color sets them inline.
    Mode: html[data-mode="light"|"dark"], or follows the system when absent. */
 :root {
   --h: 216; --t: 34; --ah: 222; --as: 62; --al: 38%; --al-d: 72%;
@@ -13,6 +15,8 @@
   --text: hsl(var(--h) calc(var(--t) * .3%) 11%);
   --muted: hsl(var(--h) calc(var(--t) * .4%) 45%);
   --accent: hsl(var(--ah) calc(var(--as) * 1%) var(--al));
+  --a2: #c8372d; --a2-d: #ec6a60;
+  --accent-2: var(--a2);
   --on-accent: #fff;
   --ok: #3a9a5b;
   --warn: #c0392b;
@@ -24,14 +28,12 @@
   --c-gray: #868e96;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
   --serif: "Hahmlet", "Nanum Myeongjo", "AppleMyungjo", "Batang", serif; /* titles: like a handwritten letter's heading, not a notes app */
-  --post-red: #c8372d;
   color-scheme: light;
 }
-:root[data-theme="mint"]     { --h: 160; --t: 20; --ah: 168; --as: 62; --al: 34%; --al-d: 55%; }
-:root[data-theme="lavender"] { --h: 255; --t: 24; --ah: 258; --as: 52; --al: 52%; --al-d: 72%; }
-:root[data-theme="ocean"]    { --h: 210; --t: 24; --ah: 212; --as: 78; --al: 44%; --al-d: 62%; }
-:root[data-theme="rose"]     { --h: 345; --t: 24; --ah: 345; --as: 62; --al: 50%; --al-d: 70%; }
-:root[data-theme="mono"]     { --h: 0;   --t: 0;  --ah: 0;   --as: 0;  --al: 16%; --al-d: 88%; }
+:root[data-theme="mint"]     { --h: 160; --t: 20; --ah: 168; --as: 62; --al: 34%; --al-d: 55%; --a2: #d9573f; --a2-d: #f2876f; }
+:root[data-theme="lavender"] { --h: 255; --t: 24; --ah: 258; --as: 52; --al: 52%; --al-d: 72%; --a2: #c7861a; --a2-d: #f0b04f; }
+:root[data-theme="rose"]     { --h: 345; --t: 24; --ah: 345; --as: 62; --al: 50%; --al-d: 70%; --a2: #1f7a8c; --a2-d: #5fc0cf; }
+:root[data-theme="mono"]     { --h: 0;   --t: 0;  --ah: 0;   --as: 0;  --al: 16%; --al-d: 88%; --a2: #c8372d; --a2-d: #ff6b5b; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-mode="light"]) {
     --bg: hsl(var(--h) calc(var(--t) * .35%) 10.5%);
@@ -42,6 +44,7 @@
     --text: hsl(var(--h) calc(var(--t) * .2%) 93%);
     --muted: hsl(var(--h) calc(var(--t) * .2%) 58%);
     --accent: hsl(var(--ah) calc(var(--as) * 1%) var(--al-d));
+    --accent-2: var(--a2-d);
     --on-accent: #161618;
     --ok: #4cc276;
     --warn: #ff6b5b;
@@ -63,6 +66,7 @@
   --text: hsl(var(--h) calc(var(--t) * .2%) 93%);
   --muted: hsl(var(--h) calc(var(--t) * .2%) 58%);
   --accent: hsl(var(--ah) calc(var(--as) * 1%) var(--al-d));
+  --accent-2: var(--a2-d);
   --on-accent: #161618;
   --ok: #4cc276;
   --warn: #ff6b5b;
@@ -625,9 +629,9 @@ section[data-h="tips"] .tips { margin-top: 0; }
 .cal-grid .sun { color: var(--c-red); }
 .cal-grid .sat { color: var(--c-blue); }
 @media (hover: hover) { .day:hover { background: var(--sel); } }
-.day.today { box-shadow: inset 0 0 0 1.5px var(--accent); font-weight: 700; }
+.day.today { box-shadow: inset 0 0 0 1.5px var(--accent-2); font-weight: 700; }
 .day.has { background: var(--accent); color: var(--on-accent); font-weight: 700; }
-.day.has.today { box-shadow: 0 0 0 2px var(--side), 0 0 0 3.5px var(--accent); }
+.day.has.today { box-shadow: 0 0 0 2px var(--side), 0 0 0 3.5px var(--accent-2); }
 .day.sel:not(.has) { background: var(--sel); }
 .day.sel.has { box-shadow: 0 0 0 2px var(--side), 0 0 0 3.5px var(--text); }
 /* Google Calendar events: small dots under the day number, and the chosen day's list. */
@@ -726,7 +730,12 @@ section[data-h="tips"] .tips { margin-top: 0; }
 .theme-card .pv .sd { width: 34%; display: flex; justify-content: center; }
 .theme-card .pv .mn { flex: 1; padding: 8px 6px; display: flex; flex-direction: column; gap: 5px; }
 .theme-card .pv .ln { height: 4px; border-radius: 2px; opacity: .55; }
-.theme-card .pv .dot { display: block; width: 14px; height: 14px; border-radius: 50%; margin-top: 7px; }
+.theme-card .pv .sd { flex-direction: column; align-items: center; gap: 4px; padding-top: 7px; }
+.theme-card .pv .dot { display: block; width: 14px; height: 14px; border-radius: 50%; }
+.theme-card .pv .dot2 { display: block; width: 8px; height: 8px; border-radius: 50%; }
+.theme-card.custom { position: relative; }
+.theme-card.custom .pv.empty { background: conic-gradient(#e5484d, #f76b15, #d9a400, #30a46c, #0090ff, #8e4ec6, #d6409f, #e5484d); }
+.theme-card.custom input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; border: 0; padding: 0; }
 .accents { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .acc {
   width: 30px; height: 30px; border-radius: 50%; position: relative;
@@ -735,7 +744,7 @@ section[data-h="tips"] .tips { margin-top: 0; }
 .acc.on::after {
   content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--text);
 }
-.acc.default { background: conic-gradient(from 0deg, var(--accent) 0 50%, var(--panel) 0); }
+.acc.default { background: conic-gradient(from 0deg, var(--accent-2) 0 50%, var(--panel) 0); }
 .acc.pick { background: conic-gradient(#e5484d, #f76b15, #d9a400, #30a46c, #0090ff, #8e4ec6, #d6409f, #e5484d); overflow: hidden; }
 .acc.pick input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; border: 0; padding: 0; }
 .set-note { margin-top: 4px !important; }
@@ -874,7 +883,7 @@ section[data-h="tips"] .tips { margin-top: 0; }
 /* The airmail stripe along the top of the sidebar. */
 #sidebar::before {
   content: ""; flex: none; height: 6px;
-  background: repeating-linear-gradient(135deg, var(--post-red) 0 11px, transparent 11px 17px, var(--accent) 17px 28px, transparent 28px 34px);
+  background: repeating-linear-gradient(135deg, var(--accent-2) 0 11px, transparent 11px 17px, var(--accent) 17px 28px, transparent 28px 34px);
 }
 /* Titles set in a serif: the 메모 / 일기 tabs, list titles, the first line of a memo, sheet headings. */
 .title-tabs button { font-family: var(--serif); font-weight: 600; font-size: 21px; letter-spacing: -.01em; }

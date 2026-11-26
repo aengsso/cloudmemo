@@ -2875,11 +2875,27 @@
     slash = { line: c.line, start: c.off - 1, i: 0, items: [] };
     slashRender("");
   }
+  // Hangul as the keys typed (날씨 → ㄴㅏㄹㅆㅣ), so a half-typed word still matches: while typing
+  // 날씨 the line reads 나, 날, 날ㅆ… and none of those is a substring of 날씨 letter by letter.
+  const JAMO_I = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+  const JAMO_V = ["ㅏ", "ㅐ", "ㅑ", "ㅒ", "ㅓ", "ㅔ", "ㅕ", "ㅖ", "ㅗ", "ㅗㅏ", "ㅗㅐ", "ㅗㅣ", "ㅛ", "ㅜ", "ㅜㅓ", "ㅜㅔ", "ㅜㅣ", "ㅠ", "ㅡ", "ㅡㅣ", "ㅣ"];
+  const JAMO_F = ["", "ㄱ", "ㄲ", "ㄱㅅ", "ㄴ", "ㄴㅈ", "ㄴㅎ", "ㄷ", "ㄹ", "ㄹㄱ", "ㄹㅁ", "ㄹㅂ", "ㄹㅅ", "ㄹㅌ", "ㄹㅍ", "ㄹㅎ", "ㅁ", "ㅂ", "ㅂㅅ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"];
+  const JAMO_C = { "ㄳ": "ㄱㅅ", "ㄵ": "ㄴㅈ", "ㄶ": "ㄴㅎ", "ㄺ": "ㄹㄱ", "ㄻ": "ㄹㅁ", "ㄼ": "ㄹㅂ", "ㄽ": "ㄹㅅ", "ㄾ": "ㄹㅌ", "ㄿ": "ㄹㅍ", "ㅀ": "ㄹㅎ", "ㅄ": "ㅂㅅ",
+    "ㅘ": "ㅗㅏ", "ㅙ": "ㅗㅐ", "ㅚ": "ㅗㅣ", "ㅝ": "ㅜㅓ", "ㅞ": "ㅜㅔ", "ㅟ": "ㅜㅣ", "ㅢ": "ㅡㅣ" };
+  function jamo(s) {
+    let out = "";
+    for (const ch of s) {
+      const c = ch.charCodeAt(0) - 0xac00;
+      if (c >= 0 && c < 11172) out += JAMO_I[Math.floor(c / 588)] + JAMO_V[Math.floor((c % 588) / 28)] + JAMO_F[c % 28];
+      else out += JAMO_C[ch] || ch;
+    }
+    return out;
+  }
   function slashRender(q) {
-    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean).map(jamo);
     const cur = memos.find((x) => x.id === currentId);
     const pool = cur && cur.diary ? [...BLOCK_LIST, WX_ITEM] : BLOCK_LIST;
-    const items = pool.filter((b) => words.every((w) => (b.n + " " + b.k).toLowerCase().includes(w)));
+    const items = pool.filter((b) => { const hay = jamo((b.n + " " + b.k).toLowerCase()); return words.every((w) => hay.includes(w)); });
     if (!items.length) { closeMenu(); return; }
     slash.items = items;
     slash.i = Math.min(slash.i, items.length - 1);
@@ -3421,19 +3437,36 @@
   applyZoom();
 
   // ---------- appearance: mode / theme / accent (per device) ----------
+  // Two colors, like the airmail stripe: the theme color (the blue: buttons, filled diary days) comes
+  // with the theme, a preset or one picked (tc); the accent color (the red: the stripe, today's ring)
+  // follows the theme's own pair unless one is picked (accent).
   const LOOK_KEY = "cloudmemo.look";
-  // h/t: background hue/tint, a: accent for the preview card (CSS has the real values).
+  // h/t: background hue/tint, a: theme color, a2: its accent color, for the preview card (CSS has the real values).
   const THEMES = [
-    { id: "", n: "에어메일", h: 216, t: 34, a: "hsl(222 62% 38%)" },
-    { id: "mint", n: "민트", h: 160, t: 20, a: "hsl(168 62% 34%)" },
-    { id: "lavender", n: "라벤더", h: 255, t: 24, a: "hsl(258 52% 52%)" },
-    { id: "ocean", n: "오션", h: 210, t: 24, a: "hsl(212 78% 44%)" },
-    { id: "rose", n: "로즈", h: 345, t: 24, a: "hsl(345 62% 50%)" },
-    { id: "mono", n: "모노", h: 0, t: 0, a: "hsl(0 0% 16%)" },
+    { id: "", n: "에어메일", h: 216, t: 34, a: "hsl(222 62% 38%)", a2: "#c8372d" },
+    { id: "mint", n: "민트", h: 160, t: 20, a: "hsl(168 62% 34%)", a2: "#d9573f" },
+    { id: "lavender", n: "라벤더", h: 255, t: 24, a: "hsl(258 52% 52%)", a2: "#c7861a" },
+    { id: "rose", n: "로즈", h: 345, t: 24, a: "hsl(345 62% 50%)", a2: "#1f7a8c" },
+    { id: "mono", n: "모노", h: 0, t: 0, a: "hsl(0 0% 16%)", a2: "#c8372d" },
   ];
+  const CUSTOM_A2 = "#c8372d";
   const ACCENTS = ["#e5484d", "#f76b15", "#d9a400", "#30a46c", "#12a594", "#0090ff", "#3e63dd", "#8e4ec6", "#d6409f", "#1d1d1f"];
-  let look = { mode: "", theme: "", accent: "" };
+  let look = { mode: "", theme: "", tc: "", accent: "" };
   try { look = Object.assign(look, JSON.parse(prefStore.getItem(LOOK_KEY) || "{}")); } catch (e) {}
+  if (!look.v) { // before v94 "accent" recolored the theme's blue: that is now a picked theme color
+    if (look.accent) { look.theme = "custom"; look.tc = look.accent; look.accent = ""; }
+    if (look.theme === "ocean") look.theme = ""; // ocean was all but airmail's blue
+    look.v = 2;
+    try { prefStore.setItem(LOOK_KEY, JSON.stringify(look)); } catch (e) {}
+  }
+  // A picked theme color: its hue tints the background a little (grays stay gray), and its lightness
+  // is kept where white text on it (light mode) and dark text on it (dark mode) stay readable.
+  function customTheme(hex) {
+    const c = hexToHsl(hex);
+    if (!c) return null;
+    return { h: c.h, t: Math.round(Math.min(34, c.s * 0.4)), ah: c.h, as: c.s,
+      al: Math.min(Math.max(c.l, 22), 48), ald: Math.min(Math.max(c.l, 62), 80) };
+  }
   function hexToHsl(hex) {
     const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
     if (!m) return null;
@@ -3451,14 +3484,17 @@
     const root = document.documentElement;
     if (look.theme) root.dataset.theme = look.theme; else delete root.dataset.theme;
     if (look.mode) root.dataset.mode = look.mode; else delete root.dataset.mode;
-    const c = hexToHsl(look.accent);
-    for (const k of ["--ah", "--as", "--al", "--al-d"]) root.style.removeProperty(k);
-    if (c) {
-      // Keep white text readable on it in light mode and dark text in dark mode.
-      root.style.setProperty("--ah", c.h);
-      root.style.setProperty("--as", c.s);
-      root.style.setProperty("--al", Math.min(Math.max(c.l, 22), 48) + "%");
-      root.style.setProperty("--al-d", Math.min(Math.max(c.l, 62), 80) + "%");
+    for (const k of ["--h", "--t", "--ah", "--as", "--al", "--al-d", "--a2", "--a2-d"]) root.style.removeProperty(k);
+    const ct = look.theme === "custom" && customTheme(look.tc);
+    if (ct) {
+      root.style.setProperty("--h", ct.h); root.style.setProperty("--t", ct.t);
+      root.style.setProperty("--ah", ct.ah); root.style.setProperty("--as", ct.as);
+      root.style.setProperty("--al", ct.al + "%"); root.style.setProperty("--al-d", ct.ald + "%");
+    }
+    const a2 = hexToHsl(look.accent) || (look.theme === "custom" && hexToHsl(CUSTOM_A2));
+    if (a2) { // deep enough on the light sidebar, bright enough on the dark one
+      root.style.setProperty("--a2", `hsl(${a2.h} ${a2.s}% ${Math.min(Math.max(a2.l, 30), 52)}%)`);
+      root.style.setProperty("--a2-d", `hsl(${a2.h} ${a2.s}% ${Math.min(Math.max(a2.l, 60), 76)}%)`);
     }
     const bg = getComputedStyle(document.body).backgroundColor;
     document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute("content", bg));
@@ -3472,15 +3508,21 @@
       const on = b.dataset.mode === look.mode;
       b.classList.toggle("on", on); b.setAttribute("aria-checked", on);
     }
-    $("set-theme").innerHTML = THEMES.map((t) => `
-      <button class="theme-card${t.id === look.theme ? " on" : ""}" data-theme="${t.id}" role="radio" aria-checked="${t.id === look.theme}">
+    const card = (t) => `
         <span class="pv" style="background:hsl(${t.h} ${t.t * 0.5}% 99%)">
-          <span class="sd" style="background:hsl(${t.h} ${t.t}% 92%)"><span class="dot" style="background:${t.a}"></span></span>
+          <span class="sd" style="background:hsl(${t.h} ${t.t}% 92%)"><span class="dot" style="background:${t.a}"></span><span class="dot2" style="background:${t.a2}"></span></span>
           <span class="mn"><span class="ln" style="background:hsl(${t.h} 10% 30%);width:80%"></span><span class="ln" style="background:hsl(${t.h} 10% 30%);width:55%"></span></span>
-        </span>${t.n}</button>`).join("");
+        </span>`;
+    const ct = customTheme(look.tc), isCustom = look.theme === "custom";
+    $("set-theme").innerHTML = THEMES.map((t) => `
+      <button class="theme-card${t.id === look.theme ? " on" : ""}" data-theme="${t.id}" role="radio" aria-checked="${t.id === look.theme}">${card(t)}${t.n}</button>`).join("") +
+      `<label class="theme-card custom${isCustom ? " on" : ""}" title="테마색 직접 고르기">${ct
+        ? card({ h: ct.h, t: ct.t, a: `hsl(${ct.ah} ${ct.as}% ${ct.al}%)`, a2: CUSTOM_A2 })
+        : `<span class="pv empty"></span>`}직접 고르기<input type="color" id="set-tc" value="${look.tc || "#3e63dd"}" aria-label="테마색 직접 고르기"></label>`;
     const custom = look.accent && !ACCENTS.includes(look.accent);
+    const themeA2 = isCustom ? CUSTOM_A2 : (THEMES.find((t) => t.id === look.theme) || THEMES[0]).a2;
     $("set-accent").innerHTML =
-      `<button class="acc default${!look.accent ? " on" : ""}" data-accent="" title="테마 기본색" aria-label="테마 기본색" role="radio" aria-checked="${!look.accent}"></button>` +
+      `<button class="acc default${!look.accent ? " on" : ""}" data-accent="" style="background:conic-gradient(from 0deg, ${themeA2} 0 50%, var(--panel) 0)" title="테마에 맞는 색" aria-label="테마에 맞는 색" role="radio" aria-checked="${!look.accent}"></button>` +
       ACCENTS.map((a) => `<button class="acc${look.accent === a ? " on" : ""}" data-accent="${a}" style="background:${a}" aria-label="${a}" role="radio" aria-checked="${look.accent === a}"></button>`).join("") +
       `<label class="acc pick${custom ? " on" : ""}" title="직접 고르기"><input type="color" id="set-pick" value="${look.accent || "#c8861a"}" aria-label="강조색 직접 고르기"></label>`;
   }
@@ -4376,7 +4418,7 @@
     const b = e.target.closest("button");
     if (!b) return;
     if (b.dataset.mode != null && b.parentElement.id === "set-mode") { look.mode = b.dataset.mode; saveLook(); }
-    else if (b.dataset.theme != null) { look.theme = b.dataset.theme; look.accent = ""; saveLook(); }
+    else if (b.dataset.theme != null) { look.theme = b.dataset.theme; saveLook(); }
     else if (b.dataset.accent != null) { look.accent = b.dataset.accent; saveLook(); }
   });
   $("ph-clean").onclick = cleanPhotos;
@@ -4390,9 +4432,13 @@
     $("wx-here").disabled = false;
   };
   $("settings").addEventListener("input", (e) => {
-    if (e.target.id === "set-pick") { look.accent = e.target.value.toLowerCase(); try { prefStore.setItem(LOOK_KEY, JSON.stringify(look)); } catch (x) {} applyLook(); }
+    if (e.target.id === "set-pick") look.accent = e.target.value.toLowerCase();
+    else if (e.target.id === "set-tc") { look.theme = "custom"; look.tc = e.target.value.toLowerCase(); }
+    else return;
+    try { prefStore.setItem(LOOK_KEY, JSON.stringify(look)); } catch (x) {}
+    applyLook();
   });
-  $("settings").addEventListener("change", (e) => { if (e.target.id === "set-pick") renderSettings(); });
+  $("settings").addEventListener("change", (e) => { if (e.target.id === "set-pick" || e.target.id === "set-tc") renderSettings(); });
   $("btn-delete").onclick = deleteCurrent;
   $("btn-more").onclick = (e) => memoMoreMenu(e.currentTarget);
   $("f-more").onclick = (e) => fmtMoreMenu(e.currentTarget);
