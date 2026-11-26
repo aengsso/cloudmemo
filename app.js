@@ -2481,10 +2481,56 @@
     afterEdit();
   });
   editor.addEventListener("click", toggleBoxAtCaret);
-  // Dropping picture files puts them where they were dropped.
+  // Dragging a photo inside the memo moves it between lines (a bar shows where it lands).
+  // The browser also offers the dragged picture as a "file", so this must win over the
+  // file drop below, which would otherwise add a copy.
+  let dragPhoto = null, dropMark = null;
+  const clearMark = () => { if (dropMark) dropMark.classList.remove("drop-before", "drop-after"); dropMark = null; };
+  function dropSpot(e) { // { line, after } for the pointer position, or null
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const line = el && editor.contains(el) ? lineOf(el) : null;
+    if (!line || line.classList.contains("folded")) return null;
+    const r = line.getBoundingClientRect();
+    return { line, after: e.clientY > r.top + r.height / 2 };
+  }
+  editor.addEventListener("dragstart", (e) => {
+    const img = e.target && e.target.nodeName === "IMG" && e.target.dataset && e.target.dataset.img ? e.target : null;
+    dragPhoto = img;
+    if (img) { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", ""); }
+  });
+  editor.addEventListener("dragend", () => { dragPhoto = null; clearMark(); });
   const hasFiles = (e) => e.dataTransfer && [...(e.dataTransfer.types || [])].includes("Files");
-  editor.addEventListener("dragover", (e) => { if (hasFiles(e) && canPhoto()) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } });
+  editor.addEventListener("dragover", (e) => {
+    if (dragPhoto) {
+      e.preventDefault(); e.dataTransfer.dropEffect = "move";
+      const s = dropSpot(e);
+      clearMark();
+      if (s) { dropMark = s.line; s.line.classList.add(s.after ? "drop-after" : "drop-before"); }
+      return;
+    }
+    if (hasFiles(e) && canPhoto()) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }
+  });
+  editor.addEventListener("dragleave", (e) => { if (!editor.contains(e.relatedTarget)) clearMark(); });
+  function movePhoto(img, spot) {
+    const from = lineOf(img);
+    if (!from || !spot) return;
+    // The photo's own line moves when it holds only the photo; otherwise the photo leaves on a new line.
+    const alone = !from.textContent.trim() && from.querySelectorAll("img").length === 1;
+    const piece = alone ? from : document.createElement("div");
+    if (spot.line === piece) return;
+    if (!alone) { img.remove(); piece.appendChild(img); if (!from.firstChild) from.appendChild(document.createElement("br")); }
+    if (spot.after) spot.line.after(piece); else spot.line.before(piece);
+    caretAt(piece, 0);
+    afterEdit();
+  }
   editor.addEventListener("drop", (e) => {
+    if (dragPhoto) {
+      e.preventDefault();
+      const img = dragPhoto, s = dropSpot(e);
+      dragPhoto = null; clearMark();
+      movePhoto(img, s);
+      return;
+    }
     if (!hasFiles(e) || !canPhoto()) return;
     e.preventDefault();
     let at = null;

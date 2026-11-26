@@ -328,6 +328,9 @@ button[hidden] { display: none !important; }
 :is(#editor, .present-page) img[data-img]:not([src]) { width: 220px; height: 140px; }
 :is(#editor, .present-page) img[data-img].missing { outline: 1px dashed var(--line); outline-offset: -1px; }
 #editor img[data-img].loading { animation: photo-pulse 1.2s ease-in-out infinite; }
+#editor img[data-img] { cursor: grab; }
+#editor > .drop-before { box-shadow: 0 -3px 0 var(--accent); }
+#editor > .drop-after { box-shadow: 0 3px 0 var(--accent); }
 @keyframes photo-pulse { 50% { opacity: .5; } }
 .present-page img[data-img] { max-height: 55vh; max-width: 100%; }
 .block-name { font-size: 13.5px; font-weight: 600; min-width: 2.6em; text-align: left; }
