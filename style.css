@@ -835,3 +835,22 @@ section[data-h="tips"] .tips { margin-top: 0; }
 }
 .al-count { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 @media (max-width: 520px) { .al-top h2 { min-width: 0; font-size: 16px; } .al-count { visibility: hidden; } }
+
+/* Album shape "창문": stained-glass windows of different sizes and frames flowing in rows, with
+   little gold stars in between. Each window is drawn on its canvas (same as the saved image). */
+.shape-window .al-grid {
+  display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 10px 12px; padding: 6px 0 10px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='170' height='130'%3E%3Cg fill='%23cfa64e'%3E%3Cpath d='M20 14l2 6 6 2-6 2-2 6-2-6-6-2 6-2z'/%3E%3Cpath d='M128 30l1.2 3.8 3.8 1.2-3.8 1.2-1.2 3.8-1.2-3.8-3.8-1.2 3.8-1.2z'/%3E%3Cpath d='M84 92l2.6 7.4 7.4 2.6-7.4 2.6-2.6 7.4-2.6-7.4-7.4-2.6 7.4-2.6z'/%3E%3Cpath d='M150 104l1 3 3 1-3 1-1 3-1-3-3-1 3-1z'/%3E%3Ccircle cx='58' cy='48' r='1.6'/%3E%3Ccircle cx='110' cy='70' r='1.2'/%3E%3Ccircle cx='30' cy='110' r='1.4'/%3E%3C/g%3E%3C/svg%3E") 0 0 / 170px 130px repeat;
+}
+.shape-window .stp { flex: none; }
+.shape-window .stp .ph { width: 100%; height: 100%; }
+.shape-window .stp .ph canvas { width: 100%; height: 100%; }
+.shape-window .stp b { display: none; }
+.shape-window .stp.none .ph::after { display: none; }
+@media (max-width: 520px) {
+  .shape-window .al-grid { gap: 8px 6px; }
+  .shape-window .stp { zoom: .78; }
+}
+
+.al-seg .gp { display: inline-flex; gap: 2px; margin-right: 5px; vertical-align: -1px; }
+.al-seg .gp i { width: 8px; height: 8px; border-radius: 2px; display: block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }

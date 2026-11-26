@@ -1019,7 +1019,7 @@
   // ---------- 이달의 사진: one stamp per day, the day's cover photo (diary only) ----------
   const ALBUM_KEY = "cloudmemo.album";
   // pmCenter: the postmark's middle — "" = a little cloud, "{days}" = "13 DAYS", else the user's text.
-  const album = Object.assign({ shape: "stamp", filter: "orig", empty: true, bg: "white", font: "postmark", pmCenter: "" }, lsGet(ALBUM_KEY, {}));
+  const album = Object.assign({ shape: "stamp", filter: "orig", empty: true, bg: "white", font: "postmark", pmCenter: "", gpal: "night" }, lsGet(ALBUM_KEY, {}));
   const CLOUD_PATH = "M-9 6h18a6 6 0 0 0 .6-12A8.5 8.5 0 0 0-6-8.4 6 6 0 0 0-9 6z"; // ~24×14, centred on 0,0
   const pmCenterText = (days) => (album.pmCenter === "{days}" ? `${days} DAYS` : String(album.pmCenter || "").toUpperCase());
   // Postmark ink: the theme's accent color, so it changes with the theme.
@@ -1237,9 +1237,10 @@
   let albumMonth = null, albumRun = 0;
   const TW = 200, TH = 240; // thumbnail pixels (shown at half size, sharp on retina)
   const ALBUM_OPTS = {
-    shape: [["stamp", "우표"], ["ticket", "티켓"], ["polaroid", "폴라로이드"], ["round", "둥근 사각"], ["circle", "동그라미"]],
-    filter: [["orig", "원본"], ["pixel", "픽셀아트"], ["halftone", "망점"], ["pastel", "파스텔"]],
+    shape: [["stamp", "우표"], ["ticket", "티켓"], ["window", "창문"], ["polaroid", "폴라로이드"], ["round", "둥근 사각"], ["circle", "동그라미"]],
+    filter: [["orig", "원본"], ["pixel", "픽셀아트"], ["glass", "스테인드글라스"], ["halftone", "망점"], ["pastel", "파스텔"]],
     bg: [["white", "흰색"], ["theme", "테마"]],
+    gpal: [["night", "밤하늘"], ["sunset", "노을"], ["forest", "숲"], ["jewel", "보석"], ["photo", "사진 색"]],
     font: [["basic", "기본"], ["postmark", "우체국 소인"], ["editorial", "영문 이탤릭"], ["bignum", "큰 숫자"], ["typewriter", "타자기"], ["serif", "명조"], ["script", "영문 손글씨"]],
   };
   // Cover photo of a diary body: the one marked data-rep, else the first.
@@ -1266,11 +1267,45 @@
   }
   const loadImage = (url) => new Promise((ok, fail) => { const im = new Image(); im.onload = () => ok(im); im.onerror = fail; im.src = url; });
   function canvasOf(w, h) { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }
-  function coverDraw(g, img, w, h) { // fill w×h, cropping the middle (an image or a canvas)
+  // Which part of a picture fills a w×h frame: the stretch with the most detail (usually the face),
+  // pulled a little toward the middle. Kept per picture and shape, so GIF frames don't jump.
+  const cropCache = new WeakMap();
+  function cropBox(img, w, h) {
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
-    const s = Math.max(w / iw, h / ih);
-    const dw = iw * s, dh = ih * s;
-    g.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    const s = Math.max(w / iw, h / ih), cw = w / s, ch = h / s, key = `${Math.round((cw / iw) * 1000)}:${Math.round((ch / ih) * 1000)}`;
+    let m = cropCache.get(img);
+    if (!m) { m = new Map(); cropCache.set(img, m); }
+    if (m.has(key)) return m.get(key);
+    let sx = (iw - cw) / 2, sy = (ih - ch) / 2;
+    const free = iw - cw > 2 ? "x" : ih - ch > 2 ? "y" : "";
+    if (free) {
+      const k = 64 / Math.max(iw, ih), tw = Math.max(8, Math.round(iw * k)), th = Math.max(8, Math.round(ih * k));
+      const t = canvasOf(tw, th), tg = t.getContext("2d", { willReadFrequently: true });
+      tg.drawImage(img, 0, 0, tw, th);
+      const d = tg.getImageData(0, 0, tw, th).data, L = new Float32Array(tw * th), line = new Float32Array(free === "x" ? tw : th);
+      for (let i = 0; i < tw * th; i++) L[i] = d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11;
+      for (let y = 1; y < th - 1; y++) for (let x = 1; x < tw - 1; x++) {
+        const e = Math.abs(L[y * tw + x + 1] - L[y * tw + x - 1]) + Math.abs(L[(y + 1) * tw + x] - L[(y - 1) * tw + x]);
+        line[free === "x" ? x : y] += e;
+      }
+      const n = line.length, win = Math.max(1, Math.round((free === "x" ? cw / iw : ch / ih) * n));
+      let best = 0, bestScore = -1;
+      for (let a = 0; a + win <= n; a++) {
+        let sum = 0;
+        for (let i = a; i < a + win; i++) sum += line[i];
+        const off = Math.abs(a + win / 2 - n / 2) / Math.max(1, (n - win) / 2);
+        const score = sum * (1 - 0.3 * off);
+        if (score > bestScore) { bestScore = score; best = a; }
+      }
+      if (free === "x") sx = Math.min(iw - cw, Math.max(0, (best / n) * iw)); else sy = Math.min(ih - ch, Math.max(0, (best / n) * ih));
+    }
+    const box = { sx, sy, cw, ch };
+    m.set(key, box);
+    return box;
+  }
+  function coverDraw(g, img, w, h) { // fill w×h with the best part of the picture (an image or a canvas)
+    const b = cropBox(img, w, h);
+    g.drawImage(img, b.sx, b.sy, b.cw, b.ch, 0, 0, w, h);
   }
   function smallPixels(img, w, h) {
     const c = canvasOf(w, h), g = c.getContext("2d", { willReadFrequently: true });
@@ -1311,10 +1346,10 @@
   }
   // Thumbnail for one photo with the chosen filter.
   // memo (optional, per animated photo): keeps the pixel-art colors of its first frame for the rest.
-  function stampCanvas(img, filter, pal, memo) {
-    const out = canvasOf(TW, TH), g = out.getContext("2d");
+  function stampCanvas(img, filter, pal, memo, W = TW, H = TH) {
+    const out = canvasOf(W, H), g = out.getContext("2d");
     if (filter === "pixel") { // pixel art: strong color, then only 16 colors picked from this photo
-      const w = 32, h = 38, d = smallPixels(img, w, h), px = [];
+      const w = Math.round((32 * W) / TW), h = Math.round((38 * H) / TH), d = smallPixels(img, w, h), px = [];
       for (let i = 0; i < d.data.length; i += 4) {
         const r = d.data[i], gg = d.data[i + 1], b = d.data[i + 2], l = r * 0.3 + gg * 0.59 + b * 0.11;
         const f = (v) => Math.max(0, Math.min(255, Math.round((l + (v - l) * 1.6 - 128) * 1.12 + 128)));
@@ -1330,10 +1365,12 @@
       }
       const s = canvasOf(w, h); s.getContext("2d").putImageData(d, 0, 0);
       g.imageSmoothingEnabled = false;
-      g.drawImage(s, 0, 0, TW, TH);
+      g.drawImage(s, 0, 0, W, H);
+    } else if (filter === "glass") {
+      drawGlass(g, img, memo, W, H);
     } else if (filter === "halftone") { // print dots: bigger where darker, on cream paper
-      const cell = 10, w = TW / cell, h = TH / cell, d = smallPixels(img, w, h).data;
-      g.fillStyle = "#f5efe2"; g.fillRect(0, 0, TW, TH);
+      const cell = 10, w = Math.round(W / cell), h = Math.round(H / cell), d = smallPixels(img, w, h).data;
+      g.fillStyle = "#f5efe2"; g.fillRect(0, 0, W, H);
       for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
         const i = (y * w + x) * 4, p = [d[i], d[i + 1], d[i + 2]];
         const l = (p[0] * 0.3 + p[1] * 0.59 + p[2] * 0.11) / 255;
@@ -1343,19 +1380,246 @@
         g.beginPath(); g.arc(x * cell + cell / 2 + (y % 2 ? cell / 4 : 0), y * cell + cell / 2, r, 0, Math.PI * 2); g.fill();
       }
     } else if (filter === "pastel") { // flat palette colors, softened toward white
-      const w = 80, h = 96, d = smallPixels(img, w, h);
+      const w = Math.round((80 * W) / TW), h = Math.round((96 * H) / TH), d = smallPixels(img, w, h);
       for (let i = 0; i < d.data.length; i += 4) {
         const c = pal[nearestIdx(pal, [d.data[i], d.data[i + 1], d.data[i + 2]])];
         for (let k = 0; k < 3; k++) d.data[i + k] = Math.round(c[k] * 0.68 + 255 * 0.32);
       }
       const s = canvasOf(w, h); s.getContext("2d").putImageData(d, 0, 0);
       g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
-      g.drawImage(s, 0, 0, TW, TH);
+      g.drawImage(s, 0, 0, W, H);
     } else {
       g.imageSmoothingQuality = "high";
-      coverDraw(g, img, TW, TH);
+      coverDraw(g, img, W, H);
     }
     return out;
+  }
+  // Stained glass: the picture split into a few dozen pieces that follow its shapes and colors (SLIC on a
+  // 100×120 copy), each piece one deeper color that glows toward its middle, gold lead between.
+  // memo (animated photos): the pieces of the first frame are kept, so the lead doesn't jump.
+  function glassPieces(d, k, w, h) {
+    const S = Math.sqrt((w * h) / k), cs = [];
+    const rnd = (n) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+    for (let y = S / 2; y < h; y += S) for (let x = S / 2; x < w; x += S) { // seeds a little off the grid: uneven pieces
+      const j = cs.length, sx = Math.max(0, Math.min(w - 1, x + (rnd(j) - 0.5) * S * 0.7)), sy = Math.max(0, Math.min(h - 1, y + (rnd(j + 99) - 0.5) * S * 0.7));
+      const i = ((sy | 0) * w + (sx | 0)) * 4;
+      cs.push([sx, sy, d[i], d[i + 1], d[i + 2]]);
+    }
+    let lab = new Int32Array(w * h).fill(0);
+    const dist = new Float32Array(w * h), m2 = 30 * 30, S2 = S * S;
+    for (let it = 0; it < 6; it++) {
+      dist.fill(Infinity);
+      cs.forEach((c, ci) => {
+        const x0 = Math.max(0, (c[0] - S) | 0), x1 = Math.min(w - 1, (c[0] + S) | 0);
+        const y0 = Math.max(0, (c[1] - S) | 0), y1 = Math.min(h - 1, (c[1] + S) | 0);
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+          const i = y * w + x, o = i * 4;
+          const dc = (d[o] - c[2]) ** 2 + (d[o + 1] - c[3]) ** 2 + (d[o + 2] - c[4]) ** 2;
+          const D = dc + (((x - c[0]) ** 2 + (y - c[1]) ** 2) / S2) * m2;
+          if (D < dist[i]) { dist[i] = D; lab[i] = ci; }
+        }
+      });
+      const sum = cs.map(() => [0, 0, 0, 0, 0, 0]);
+      for (let i = 0; i < w * h; i++) { const t = sum[lab[i]], o = i * 4; t[0] += i % w; t[1] += (i / w) | 0; t[2] += d[o]; t[3] += d[o + 1]; t[4] += d[o + 2]; t[5]++; }
+      cs.forEach((c, ci) => { const t = sum[ci]; if (t[5]) for (let j = 0; j < 5; j++) c[j] = t[j] / t[5]; });
+    }
+    for (let pass = 0; pass < 3; pass++) { // smooth the edges: each cell takes its neighbors' most common piece
+      const out = new Int32Array(lab);
+      for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+        const cnt = new Map();
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const l = lab[(y + dy) * w + x + dx]; cnt.set(l, (cnt.get(l) || 0) + 1); }
+        let best = lab[y * w + x], bn = 0;
+        for (const [l, n] of cnt) if (n > bn) { bn = n; best = l; }
+        out[y * w + x] = best;
+      }
+      lab = out;
+    }
+    // Neighbors of nearly the same color become one bigger pane (flat sky = a few big panes, not tiles).
+    const n0 = cs.length, mean = new Float32Array(n0 * 4);
+    for (let i = 0; i < w * h; i++) { const l = lab[i] * 4, o = i * 4; mean[l] += d[o]; mean[l + 1] += d[o + 1]; mean[l + 2] += d[o + 2]; mean[l + 3]++; }
+    const par = Array.from({ length: n0 }, (_, i) => i), size = new Float32Array(n0), acc = new Float32Array(n0 * 3);
+    for (let l = 0; l < n0; l++) { const c = mean[l * 4 + 3] || 1; size[l] = mean[l * 4 + 3]; for (let j = 0; j < 3; j++) acc[l * 3 + j] = mean[l * 4 + j]; mean[l * 4] /= c; mean[l * 4 + 1] /= c; mean[l * 4 + 2] /= c; }
+    const root = (a) => { while (par[a] !== a) a = par[a] = par[par[a]]; return a; };
+    const pairs = new Map();
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const a = lab[y * w + x];
+      for (const b of [x < w - 1 ? lab[y * w + x + 1] : a, y < h - 1 ? lab[(y + 1) * w + x] : a]) if (a !== b) pairs.set(a < b ? a * 4096 + b : b * 4096 + a, 1);
+    }
+    const colDist = (a, b) => { const sa = size[a] || 1, sb = size[b] || 1; let t = 0; for (let j = 0; j < 3; j++) t += (acc[a * 3 + j] / sa - acc[b * 3 + j] / sb) ** 2; return Math.sqrt(t); };
+    const maxSize = (w * h / k) * 6;
+    for (let round = 0; round < 3; round++) {
+      const list = [...pairs.keys()].map((key) => [Math.floor(key / 4096), key % 4096]).map(([a, b]) => [root(a), root(b)]).filter(([a, b]) => a !== b)
+        .map(([a, b]) => [colDist(a, b), a, b]).sort((p, q) => p[0] - q[0]);
+      for (const [, a0, b0] of list) {
+        const a = root(a0), b = root(b0);
+        const lumOf = (q) => (acc[q * 3] * 0.3 + acc[q * 3 + 1] * 0.59 + acc[q * 3 + 2] * 0.11) / (size[q] || 1);
+        const limit = lumOf(a) < 75 && lumOf(b) < 75 ? 56 : 30; // dark fur and shadows: fewer, bigger panes
+        if (a === b || colDist(a, b) > limit || size[a] + size[b] > maxSize * (limit > 30 ? 1.6 : 1)) continue;
+        par[b] = a; size[a] += size[b]; for (let j = 0; j < 3; j++) acc[a * 3 + j] += acc[b * 3 + j];
+      }
+    }
+    const ids = new Map();
+    for (let i = 0; i < w * h; i++) { const r = root(lab[i]); if (!ids.has(r)) ids.set(r, ids.size); lab[i] = ids.get(r); }
+    const n = ids.size, cx = new Float32Array(n), cy = new Float32Array(n), cnt = new Float32Array(n);
+    for (let i = 0; i < w * h; i++) { const l = lab[i]; cx[l] += i % w; cy[l] += (i / w) | 0; cnt[l]++; }
+    for (let l = 0; l < n; l++) if (cnt[l]) { cx[l] /= cnt[l]; cy[l] /= cnt[l]; }
+    const R = new Float32Array(n); // each pane's reach, for its glow
+    for (let l = 0; l < n; l++) R[l] = Math.sqrt(cnt[l] / Math.PI) * 1.25 + 1;
+    return { lab, n, cx, cy, R };
+  }
+  // Glass colors: a few fixed colors for every window of the month, so photos look like one
+  // set of glass (light/dark of the photo picks the color; strong warm or cool parts get the accent).
+  const GLASS_PALS = {
+    night: { ramp: ["#17224a", "#243c78", "#3a5fa8", "#7aa1d6", "#c5daef", "#f5f2e8"], accent: ["#b98a2c", "#ecc96b"], accentWarm: true },
+    sunset: { ramp: ["#35204a", "#62305f", "#a94a68", "#e27d67", "#f4b688", "#fbe8cd"], accent: ["#33528f", "#86a7d6"], accentWarm: false },
+    forest: { ramp: ["#18301f", "#2b5438", "#4a8452", "#8bbb76", "#cde2b2", "#f4f0dc"], accent: ["#83552a", "#d7a45a"], accentWarm: true },
+    jewel: { near: ["#1a1c38", "#263f92", "#2f7fc0", "#1e7a6b", "#3e9b4f", "#8d2446", "#c9453e", "#d98b2b", "#e9c86a", "#7b4a9e", "#f3ead2", "#b9c7d8"] },
+  };
+  const gpalSample = (v) => {
+    const P = GLASS_PALS[v], cs = P ? (P.ramp ? [P.ramp[1], P.ramp[3], P.ramp[5], P.accent[1]] : [P.near[1], P.near[5], P.near[3], P.near[8]]) : ["#c98a4a", "#6aa0c8", "#7bb36a", "#e2c4a0"];
+    return `<span class="gp">${cs.map((c) => `<i style="background:${c}"></i>`).join("")}</span>`;
+  };
+  const hexRGB = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  // Pane colors → palette colors. lum: [low, high] luminance of the picture (kept per GIF).
+  function glassRemap(col, lums, sizes, palName, memo) {
+    const P = GLASS_PALS[palName];
+    if (!P) return col;
+    if (P.near) return col.map((c) => { const L = c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11, k = 1.6; return hexRGB(P.near[nearestIdx(P.near.map(hexRGB), c.map((v) => L + (v - L) * k))]); });
+    let range = memo && memo.lumRange;
+    if (!range) { // 8th and 92nd percentile of the panes' brightness (by area), so each photo uses the whole ramp
+      const order = lums.map((L, i) => [L, sizes[i]]).sort((a, b) => a[0] - b[0]), total = sizes.reduce((a, b) => a + b, 0) || 1;
+      let accum = 0, lo = order[0][0], hi = order[order.length - 1][0];
+      for (const [L, n] of order) { accum += n; if (accum / total < 0.08) lo = L; if (accum / total < 0.92) hi = L; }
+      range = [lo, Math.max(lo + 30, hi)];
+      if (memo) memo.lumRange = range;
+    }
+    const ramp = P.ramp.map(hexRGB), acc = P.accent.map(hexRGB);
+    return col.map((c, i) => {
+      const t = Math.max(0, Math.min(1, (lums[i] - range[0]) / (range[1] - range[0])));
+      const chroma = Math.max(...c) - Math.min(...c), sat = chroma / Math.max(1, Math.max(...c)), warm = c[0] - c[2];
+      if (chroma > 60 && sat > 0.42 && (P.accentWarm ? warm > 40 : warm < -30)) return acc[t > 0.5 ? 1 : 0]; // only truly vivid parts
+      return ramp[Math.round(t * (ramp.length - 1))];
+    });
+  }
+  function drawGlass(g, img, memo, W, H) {
+    const GW = Math.round(W / 2), GH = Math.round(H / 2), d = smallPixels(img, GW, GH).data;
+    const P = (memo && memo.glass) || glassPieces(d, Math.max(18, Math.round((52 * GW * GH) / 12000)), GW, GH);
+    if (memo) memo.glass = P;
+    const { lab, n, cx, cy, R } = P, sum = new Float32Array(n * 4);
+    for (let i = 0; i < GW * GH; i++) { const l = lab[i] * 4, o = i * 4; sum[l] += d[o]; sum[l + 1] += d[o + 1]; sum[l + 2] += d[o + 2]; sum[l + 3]++; }
+    let col = [];
+    const lums = [], sizes = [], raw = [];
+    for (let l = 0; l < n; l++) { const c = sum[l * 4 + 3] || 1; raw.push([sum[l * 4] / c, sum[l * 4 + 1] / c, sum[l * 4 + 2] / c]); lums.push(raw[l][0] * 0.3 + raw[l][1] * 0.59 + raw[l][2] * 0.11); sizes.push(sum[l * 4 + 3]); }
+    const palName = album.gpal || "night", fixedPal = palName !== "photo" && GLASS_PALS[palName];
+    for (let l = 0; l < n; l++) { // the piece's color: deeper and more saturated, like colored glass
+      const c = sum[l * 4 + 3] || 1;
+      let r = sum[l * 4] / c, gg = sum[l * 4 + 1] / c, b = sum[l * 4 + 2] / c;
+      // Colored parts get richer; whites and grays stay clear glass instead of turning yellow.
+      const L = r * 0.3 + gg * 0.59 + b * 0.11, chroma = Math.max(r, gg, b) - Math.min(r, gg, b);
+      const k = L > 165 ? 1 : 1 + 0.55 * Math.min(1, Math.max(0, chroma - 14) / 50); // light parts: no extra color
+      if (L > 165 && chroma < 45) { const m = (r + gg + b) / 3; r = m + (r - m) * 0.45; gg = m + (gg - m) * 0.45; b = m + (b - m) * 0.45; } // warm whites → white
+      r = L + (r - L) * k; gg = L + (gg - L) * k; b = L + (b - L) * k;
+      if (chroma < 28 && L > 150) { r = r * 0.92 + 8; gg = gg * 0.94 + 10; b = b * 0.94 + 18; } // a faint cool tint, like clear glass
+      col.push([r, gg, b].map((v) => Math.max(0, Math.min(255, (v - 128) * 1.12 + 124))));
+    }
+    let lab2 = lab, n2 = n, cx2 = cx, cy2 = cy, R2 = R;
+    if (fixedPal) { // neighbors that got the same palette color become one big pane: lead only where the color changes
+      col = glassRemap(raw, lums, sizes, palName, memo);
+      const par = Array.from({ length: n }, (_, i) => i), root = (a) => { while (par[a] !== a) a = par[a] = par[par[a]]; return a; };
+      const same = (a, b) => col[a][0] === col[b][0] && col[a][1] === col[b][1] && col[a][2] === col[b][2];
+      for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+        const a = lab[y * GW + x];
+        if (x < GW - 1) { const b = lab[y * GW + x + 1]; if (a !== b && same(a, b)) par[root(b)] = root(a); }
+        if (y < GH - 1) { const b = lab[(y + 1) * GW + x]; if (a !== b && same(a, b)) par[root(b)] = root(a); }
+      }
+      const ids = new Map(), gcol = [];
+      lab2 = new Int32Array(GW * GH);
+      for (let i = 0; i < GW * GH; i++) { const r = root(lab[i]); if (!ids.has(r)) { ids.set(r, ids.size); gcol.push(col[r]); } lab2[i] = ids.get(r); }
+      for (let pass = 0; pass < 2; pass++) { // round off the big panes' edges
+        const out = new Int32Array(lab2);
+        for (let y = 1; y < GH - 1; y++) for (let x = 1; x < GW - 1; x++) {
+          const cnt = new Map();
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const l = lab2[(y + dy) * GW + x + dx]; cnt.set(l, (cnt.get(l) || 0) + 1); }
+          let best = lab2[y * GW + x], bn = 0;
+          for (const [l, k] of cnt) if (k > bn) { bn = k; best = l; }
+          out[y * GW + x] = best;
+        }
+        lab2 = out;
+      }
+      n2 = ids.size; col = gcol;
+      cx2 = new Float32Array(n2); cy2 = new Float32Array(n2); R2 = new Float32Array(n2);
+      const cnt = new Float32Array(n2);
+      for (let i = 0; i < GW * GH; i++) { const l = lab2[i]; cx2[l] += i % GW; cy2[l] += (i / GW) | 0; cnt[l]++; }
+      for (let l = 0; l < n2; l++) { if (cnt[l]) { cx2[l] /= cnt[l]; cy2[l] /= cnt[l]; } R2[l] = Math.sqrt(cnt[l] / Math.PI) * 1.25 + 1; }
+    }
+    const glass = new ImageData(GW, GH), leads = [new ImageData(GW, GH), new ImageData(GW, GH), new ImageData(GW, GH)];
+    const LEAD = [[80, 58, 20], [214, 178, 98], [248, 230, 168]]; // shadow, gold, shine
+    for (let y = 0; y < GH; y++) for (let x = 0; x < GW; x++) {
+      const i = y * GW + x, l = lab2[i], o = i * 4, c = col[l];
+      const t = Math.min(1, Math.hypot(x - cx2[l], y - cy2[l]) / R2[l]);
+      const f = 1.08 - 0.24 * t * t + (((x + y * 0.6) % 23) < 2.2 ? 0.05 : 0); // glow in the middle, a faint streak
+      glass.data[o] = Math.min(255, c[0] * f); glass.data[o + 1] = Math.min(255, c[1] * f); glass.data[o + 2] = Math.min(255, c[2] * f); glass.data[o + 3] = 255;
+      const edge = (x < GW - 1 && lab2[i + 1] !== l) || (y < GH - 1 && lab2[i + GW] !== l) || x === 0 || y === 0 || x === GW - 1 || y === GH - 1;
+      if (edge) leads.forEach((ld, j) => { ld.data[o] = LEAD[j][0]; ld.data[o + 1] = LEAD[j][1]; ld.data[o + 2] = LEAD[j][2]; ld.data[o + 3] = 255; });
+    }
+    const gc = canvasOf(GW, GH), [dark, gold, shine] = leads.map((ld) => { const c = canvasOf(GW, GH); c.getContext("2d").putImageData(ld, 0, 0); return c; });
+    gc.getContext("2d").putImageData(glass, 0, 0);
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+    if (fixedPal) { // the palette's glass, with only the photo's light and shade showing through (shapes stay readable)
+      g.drawImage(gc, 0, 0, W, H);
+      g.save(); g.globalCompositeOperation = "luminosity"; g.globalAlpha = 0.2; coverDraw(g, img, W, H); g.restore();
+    } else { // the photo shows faintly through the colored glass, so faces and shapes stay recognizable
+      coverDraw(g, img, W, H);
+      g.save(); g.globalAlpha = 0.64; g.drawImage(gc, 0, 0, W, H); g.restore();
+    }
+    g.save(); // the lead: a soft dark edge, then thin gold with a light line on top
+    g.globalAlpha = 0.3;
+    for (const [dx, dy] of [[-0.8, 0], [0.8, 0], [0, -0.8], [0, 0.8]]) g.drawImage(dark, dx, dy, W, H);
+    g.globalAlpha = 1;
+    for (const [dx, dy] of [[0, 0], [0.35, 0.35]]) g.drawImage(gold, dx, dy, W, H);
+    g.globalAlpha = 0.5; g.drawImage(shine, -0.3, -0.3, W, H);
+    g.restore();
+  }
+  // 창문: each day gets its own window size and frame, fixed by its date (the same every time):
+  // tall, wide, small or panorama; frames: 0 arch, 1 oval, 2 cut corners, 3 rounded, 4 low dome.
+  const hash01 = (n) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+  const WIN_SIZES = [{ w: 180, h: 240, k: [0, 1, 2, 3] }, { w: 330, h: 200, k: [3, 4, 1, 2] }, { w: 150, h: 190, k: [1, 3, 0] }, { w: 400, h: 170, k: [3, 2, 4] }];
+  // Every size × frame, in the order a tap walks through them.
+  const WIN_VARIANTS = WIN_SIZES.flatMap((v) => v.k.map((kind) => ({ w: v.w, h: v.h, kind })));
+  const WINPICK_KEY = "cloudmemo.winPick"; // date → chosen variant (this device)
+  let winPick = lsGet(WINPICK_KEY, {});
+  function winLay(s, y, mo) {
+    const seed = y * 500 + mo * 40 + s.d, r = hash01(seed), dy = Math.round((hash01(seed + 0.71) - 0.5) * 26);
+    const picked = WIN_VARIANTS[winPick[s.key]];
+    if (picked) return { ...picked, dy };
+    const v = !s.id ? WIN_SIZES[2] : WIN_SIZES[r < 0.42 ? 0 : r < 0.68 ? 1 : r < 0.84 ? 2 : 3];
+    return { w: v.w, h: v.h, kind: v.k[Math.floor(hash01(seed + 0.37) * v.k.length)], dy };
+  }
+  // A tap on a window: the next size/frame for that day.
+  function nextWindow(s, y, mo) {
+    const L = winLay(s, y, mo), i = WIN_VARIANTS.findIndex((v) => v.w === L.w && v.h === L.h && v.kind === L.kind);
+    winPick = { ...winPick, [s.key]: (i + 1) % WIN_VARIANTS.length };
+    lsSet(WINPICK_KEY, winPick);
+  }
+  // Little gold stars scattered between the windows (fixed per month).
+  function sparkles(x, y, w, h, seed) {
+    const out = [], n = Math.round((w * h) / 12000);
+    for (let i = 0; i < n; i++) {
+      const r = hash01(seed + i * 3.1);
+      out.push({ x: x + hash01(seed + i * 1.7) * w, y: y + hash01(seed + i * 2.3) * h, r: r < 0.7 ? 4 + r * 6 : 10 + r * 6, dot: hash01(seed + i * 5.9) < 0.3 });
+    }
+    return out;
+  }
+  function drawSparkles(g, list) {
+    g.save();
+    for (const p of list) {
+      g.fillStyle = p.dot ? "rgba(201,162,74,.75)" : "#cfa64e";
+      g.beginPath();
+      if (p.dot) g.arc(p.x, p.y, p.r * 0.28, 0, Math.PI * 2);
+      else for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4, rr = k % 2 ? p.r * 0.24 : p.r; g.lineTo(p.x + Math.cos(a) * rr, p.y + Math.sin(a) * rr); }
+      g.closePath(); g.fill();
+    }
+    g.restore();
   }
   // 글씨 buttons show a small sample in their own style instead of a name.
   const FONT_SAMPLE = {
@@ -1369,10 +1633,11 @@
   };
   function albumOptions() {
     const seg = (key) => `<div class="seg al-seg${key === "font" ? " al-fonts" : ""}" data-k="${key}">` + ALBUM_OPTS[key].map(([v, n]) =>
-      `<button type="button" data-v="${v}" class="${album[key] === v ? "on" : ""}" title="${n}" aria-label="${n}">${key === "font" ? FONT_SAMPLE[v] : n}</button>`).join("") + `</div>`;
+      `<button type="button" data-v="${v}" class="${album[key] === v ? "on" : ""}" title="${n}" aria-label="${n}">${key === "font" ? FONT_SAMPLE[v] : key === "gpal" ? gpalSample(v) + n : n}</button>`).join("") + `</div>`;
     $("al-opts").innerHTML =
       `<div class="al-row"><span>모양</span>${seg("shape")}</div>` +
       `<div class="al-row"><span>필터</span>${seg("filter")}</div>` +
+      (album.filter === "glass" ? `<div class="al-row"><span>유리 색</span>${seg("gpal")}</div>` : "") +
       `<div class="al-row"><span>글씨</span>${seg("font")}</div>` +
       (album.font === "postmark"
         ? `<div class="al-row al-pm"><span>가운데</span><input id="al-pm" maxlength="16" placeholder="비우면 구름" value="${esc(album.pmCenter === "{days}" ? "" : album.pmCenter || "")}" aria-label="소인 가운데 글자 (이모지도 돼)">` +
@@ -1397,8 +1662,10 @@
     page.classList.toggle("few", list.length > 0 && list.length <= ALBUM_FEW);
     page.style.setProperty("--pm", pmScaleFor(list.length));
     $("al-count").textContent = (covers.size ? `사진 ${covers.size}일` : "이 달엔 대표 사진이 아직 없어") + (locked && !vault ? " · 잠긴 일기는 열어야 보여" : "");
+    const win = album.shape === "window", lays = new Map(win ? list.map((s) => [s.key, winLay(s, y, mo)]) : []);
+    const winStyle = (s) => { const L = lays.get(s.key); return L ? ` style="width:${(L.w + 24) / 2}px;height:${(L.h + 24) / 2}px;margin-top:${L.dy}px"` : ""; };
     page.innerHTML = headerHTML(y, mo, covers.size) + `<div class="al-grid">` + list.map((s, i) =>
-      `<button type="button" class="stp${s.id ? "" : " none"}${tornAt(i, list.length) ? " torn" : ""}${s.dow === 0 ? " sun" : s.dow === 6 ? " sat" : ""}" data-day="${s.key}" title="${s.key} 일기 열기"><span class="ph"></span><b>${s.d}</b></button>`).join("") + `</div>`;
+      `<button type="button" class="stp${s.id ? "" : " none"}${tornAt(i, list.length) ? " torn" : ""}${s.dow === 0 ? " sun" : s.dow === 6 ? " sat" : ""}" data-day="${s.key}" title="${win ? `${s.key} · 눌러서 창문 모양 바꾸기, 두 번 눌러 일기 열기` : `${s.key} 일기 열기`}"${winStyle(s)}><span class="ph"></span><b>${s.d}</b></button>`).join("") + `</div>`;
     // Load the photos, then draw them all with one palette.
     const imgs = new Map(), gifs = new Map();
     await Promise.all(list.filter((s) => s.id).map(async (s) => {
@@ -1415,31 +1682,52 @@
     // Animated covers: every frame through the same filter (fewer frames each when there are many).
     const anims = new Map(), perGif = Math.max(6, Math.min(36, Math.floor(360 / Math.max(1, gifs.size))));
     for (const [id, buf] of gifs) {
-      const frames = [], delays = [], memo = {};
-      try { gifFrames(buf, perGif, (cv, delay) => { frames.push(stampCanvas(cv, album.filter, pal, memo)); delays.push(delay); }); } catch (e) {}
+      const frames = [], delays = [], memo = {}, L = win && lays.get((list.find((x) => x.id === id) || {}).key);
+      try { gifFrames(buf, perGif, (cv, delay) => { frames.push(stampCanvas(cv, album.filter, pal, memo, L ? L.w : TW, L ? L.h : TH)); delays.push(delay); }); } catch (e) {}
       if (frames.length > 1) anims.set(id, { frames, delays });
       await new Promise((r) => setTimeout(r)); // let the screen breathe between GIFs
       if (run !== albumRun) return;
     }
+    const inkS = album.bg === "theme" ? getComputedStyle(document.documentElement).getPropertyValue("--text").trim() || "#222" : "#2b2a28";
+    // A window: the framed picture is drawn on its canvas, the same way as in the saved image.
+    // fresh: after a tap the size changed, so a GIF's frames are made again for the new shape.
+    const paintWindow = (s, fresh) => {
+      const btn = page.querySelector(`[data-day="${s.key}"]`), slot = btn && btn.querySelector(".ph");
+      if (!slot) return;
+      const L = winLay(s, y, mo), im = s.id && imgs.get(s.id);
+      lays.set(s.key, L);
+      btn.style.cssText = `width:${(L.w + 24) / 2}px;height:${(L.h + 24) / 2}px;margin-top:${L.dy}px`;
+      let a = s.id && anims.get(s.id);
+      if (a && fresh && gifs.has(s.id)) {
+        const frames = [], delays = [], memo = {};
+        try { gifFrames(gifs.get(s.id), perGif, (cv, delay) => { frames.push(stampCanvas(cv, album.filter, pal, memo, L.w, L.h)); delays.push(delay); }); } catch (e) {}
+        if (frames.length > 1) { a = { frames, delays }; anims.set(s.id, a); }
+      }
+      const framed = (photo) => { const c = canvasOf(L.w + 24, L.h + 24); drawStamp(c.getContext("2d"), 12, 12, L.w, L.h, photo, s.d, inkS, s.dow, 0, L.kind); return c; };
+      if (a) { const fa = { frames: a.frames.map(framed), delays: a.delays }, cv = canvasOf(L.w + 24, L.h + 24); cv.getContext("2d").drawImage(fa.frames[0], 0, 0); slot.replaceChildren(cv); playStamp(cv, fa, run); }
+      else slot.replaceChildren(framed(im ? stampCanvas(im, album.filter, pal, null, L.w, L.h) : null));
+      if (s.id && !im) btn.classList.add("missing");
+    };
     for (const s of list) {
       const im = s.id && imgs.get(s.id), slot = page.querySelector(`[data-day="${s.key}"] .ph`);
       if (!slot) continue;
       const a = s.id && anims.get(s.id);
+      if (win) { paintWindow(s, false); continue; }
       if (a) { const cv = canvasOf(TW, TH); cv.getContext("2d").drawImage(a.frames[0], 0, 0); slot.replaceChildren(cv); playStamp(cv, a, run); }
       else if (im) slot.replaceChildren(stampCanvas(im, album.filter, pal));
       else if (s.id) slot.parentElement.classList.add("missing");
     }
-    albumStamps = { y, mo, list, imgs, pal, anims, days: covers.size };
+    albumStamps = { y, mo, list, imgs, pal, anims, days: covers.size, paintWindow };
     $("al-save-gif").hidden = !anims.size;
   }
   // A stamp from a GIF keeps moving while the album is open.
   function playStamp(cv, a, run) {
     let i = 0;
     const tick = () => {
-      if (run !== albumRun || $("album").hidden) return;
+      if (run !== albumRun || $("album").hidden || !cv.isConnected) return;
       i = (i + 1) % a.frames.length;
       const g = cv.getContext("2d");
-      g.clearRect(0, 0, TW, TH); g.drawImage(a.frames[i], 0, 0);
+      g.clearRect(0, 0, cv.width, cv.height); g.drawImage(a.frames[i], 0, 0);
       setTimeout(tick, a.delays[i]);
     };
     setTimeout(tick, a.delays[0]);
@@ -1490,6 +1778,7 @@
     const hc = canvasOf(1600, top), hg = hc.getContext("2d", { willReadFrequently: true });
     await drawAlbumHeader(hg, 0, st.y, st.mo, ink, css.getPropertyValue("--font"), st.days, pm);
     const hb = inkBounds(hg, 1600, top);
+    if (album.shape === "window") return windowPage({ st, n, few, top, bottom, mx, css, ink, hc, hb });
     const gridW = cols * sw + (cols - 1) * gap;
     const contentW = (few ? Math.max(gridW, hb.w, 560) : 5 * sw + 4 * gap) + (ticket && n > 1 ? TORN.dx + 16 : 0);
     const W = mx * 2 + contentW, H = top + rows * (sh + gapY + (album.shape === "polaroid" ? 28 : 0)) - gapY + bottom;
@@ -1512,12 +1801,49 @@
     g.fillText("클라우드 메모", few ? W / 2 : mx, H - 40); g.globalAlpha = 1; g.textAlign = "left";
     return { c, g, W, H, bg, ink, sw, sh, slots };
   }
+  // 창문 page: windows of different sizes flow in rows (each row centered), stars in between.
+  function windowPage(o) {
+    const { st, n, few, top, bottom, mx, css, ink, hc, hb } = o, GX = 34, GY = 30, maxW = 5 * 200 + 4 * 34;
+    const rows = [];
+    let row = null;
+    for (const s of st.list) {
+      const L = winLay(s, st.y, st.mo);
+      if (!row || row.w + GX + L.w > maxW) { row = { items: [], w: -GX, h: 0 }; rows.push(row); }
+      row.items.push({ s, L }); row.w += GX + L.w; row.h = Math.max(row.h, L.h + Math.abs(L.dy) * 2);
+    }
+    const contentW = few || rows.length <= 1 ? Math.max(rows[0] ? rows[0].w : 0, hb.w, 560) : maxW;
+    const gridH = rows.reduce((a, r) => a + r.h, 0) + GY * Math.max(0, rows.length - 1);
+    const W = mx * 2 + contentW, H = top + Math.max(gridH, 0) + bottom;
+    const c = canvasOf(W, H), g = c.getContext("2d", { willReadFrequently: true });
+    const bg = album.bg === "theme" ? css.getPropertyValue("--bg").trim() || "#f6f5f2" : "#ffffff";
+    g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    g.drawImage(hc, few ? Math.round((W - hb.w) / 2) - hb.x : mx, 0);
+    const sparks = sparkles(mx - 20, top - 16, contentW + 40, gridH + 32, st.y * 13 + st.mo * 7);
+    drawSparkles(g, sparks);
+    const slots = [];
+    let yy = top;
+    for (const r of rows) {
+      let xx = mx + (contentW - r.w) / 2;
+      for (const { s, L } of r.items) {
+        const cx = Math.round(xx), cy = Math.round(yy + (r.h - L.h) / 2 + L.dy);
+        const im = s.id && st.imgs.get(s.id), a = s.id && st.anims && st.anims.get(s.id);
+        drawStamp(g, cx, cy, L.w, L.h, a ? a.frames[0] : im ? stampCanvas(im, album.filter, st.pal, null, L.w, L.h) : null, s.d, ink, s.dow, 0, L.kind);
+        if (a) slots.push({ s, a, cx, cy, tilt: 0, lay: L });
+        xx += L.w + GX;
+      }
+      yy += r.h + GY;
+    }
+    g.fillStyle = ink; g.globalAlpha = 0.45; g.font = "400 20px " + css.getPropertyValue("--font");
+    g.textAlign = few ? "center" : "left";
+    g.fillText("클라우드 메모", few ? W / 2 : mx, H - 40); g.globalAlpha = 1; g.textAlign = "left";
+    return { c, g, W, H, bg, ink, sw: 200, sh: 240, slots, sparks };
+  }
   // "움짤로 저장": the same page as an animated GIF. Stamps from GIFs move on one shared clock
   // (at most 4 s, then it loops); everything else is drawn once.
   async function albumGIF() {
     const r = await albumCanvas();
     if (!r) return null;
-    const { c, g, W, H, bg, ink, sw, sh, slots } = r;
+    const { c, g, W, H, bg, ink, sw, sh, slots, sparks } = r;
     if (!slots.length) return new Promise((ok) => c.toBlob(ok, "image/png"));
     const dur = (a) => a.delays.reduce((x, y) => x + y, 0);
     let step = Math.max(40, Math.min(100, ...slots.flatMap((x) => x.a.delays)));
@@ -1527,10 +1853,12 @@
     const frameAt = (a, t) => { t %= dur(a); for (let i = 0; i < a.delays.length; i++) { if (t < a.delays[i]) return i; t -= a.delays[i]; } return 0; };
     const boxH = album.shape === "circle" ? sw : album.shape === "polaroid" ? sh + 28 : sh;
     const margin = (x) => album.shape !== "ticket" ? 16 : x.tilt ? 20 : 0;
+    const sizeOf = (x) => (x.lay ? [x.lay.w, x.lay.h, x.lay.h] : [sw, sh, boxH]);
     const redraw = (x, k) => { // clear the stamp's spot (and its shadow), draw frame k
-      const M = margin(x);
-      g.fillStyle = bg; g.fillRect(x.cx - M, x.cy - M, sw + 2 * M, boxH + 2 * M);
-      drawStamp(g, x.cx, x.cy, sw, sh, x.a.frames[k], x.s.d, ink, x.s.dow, x.tilt);
+      const M = margin(x), [ww, hh, bh] = sizeOf(x);
+      g.fillStyle = bg; g.fillRect(x.cx - M, x.cy - M, ww + 2 * M, bh + 2 * M);
+      if (sparks) { g.save(); g.beginPath(); g.rect(x.cx - M, x.cy - M, ww + 2 * M, bh + 2 * M); g.clip(); drawSparkles(g, sparks); g.restore(); }
+      drawStamp(g, x.cx, x.cy, ww, hh, x.a.frames[k], x.s.d, ink, x.s.dow, x.tilt, x.lay && x.lay.kind);
     };
     // One palette for the whole animation: the page plus every frame of the moving stamps.
     const sample = [];
@@ -1543,7 +1871,7 @@
     const fixed = [...freq].filter(([, n]) => n > sample.length * 0.003).sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k]) => k);
     const fixedSet = new Set(fixed), rest = sample.filter((p) => !fixedSet.has((p[0] << 16) | (p[1] << 8) | p[2]));
     const pal = [...fixed.map((k) => [k >> 16, (k >> 8) & 255, k & 255]), ...medianCut(rest, 255 - fixed.length)].slice(0, 255);
-    const toIdx = paletteMapper(pal, album.filter === "orig" ? 18 : 0, new Map(fixed.map((k, i) => [k, i]))); // photos: dither
+    const toIdx = paletteMapper(pal, album.filter === "orig" || album.filter === "glass" ? 18 : 0, new Map(fixed.map((k, i) => [k, i]))); // photos: dither
     const frames = [], prev = new Uint8Array(W * H);
     const first = toIdx(g.getImageData(0, 0, W, H).data, W);
     prev.set(first);
@@ -1556,8 +1884,8 @@
         const k = frameAt(x.a, t);
         if (k === shown[i]) return;
         shown[i] = k; redraw(x, k);
-        const M = margin(x);
-        x0 = Math.min(x0, x.cx - M); y0 = Math.min(y0, x.cy - M); x1 = Math.max(x1, x.cx + sw + M); y1 = Math.max(y1, x.cy + boxH + M);
+        const M = margin(x), [ww, , bh] = sizeOf(x);
+        x0 = Math.min(x0, x.cx - M); y0 = Math.min(y0, x.cy - M); x1 = Math.max(x1, x.cx + ww + M); y1 = Math.max(y1, x.cy + bh + M);
       });
       if (x1 <= x0) { frames[frames.length - 1].delay += step; continue; } // nothing moved
       x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(W, x1); y1 = Math.min(H, y1);
@@ -1574,7 +1902,8 @@
   }
   // One stamp on the export canvas. The frame's outer box is w×h (circle: w×w; polaroid: + a
   // 28px caption strip); the photo fills the inner box, cropped to fit.
-  function drawStamp(g, x, y, w, h, photo, day, ink, dow, tilt = 0) {
+  function drawStamp(g, x, y, w, h, photo, day, ink, dow, tilt = 0, kind = null) {
+    const wk = kind == null ? day % 4 : kind; // window frame
     const dayInk = dow === 0 ? "#e03131" : dow === 6 ? "#1971c2" : "#2b2a28"; // Sunday red, Saturday blue
     const shape = album.shape, font = getComputedStyle(document.documentElement).getPropertyValue("--font");
     const boxH = shape === "circle" ? w : shape === "polaroid" ? h + 28 : h;
@@ -1582,6 +1911,7 @@
     const P = shape === "stamp" ? 16 : shape === "polaroid" ? 10 : 0;
     const inner = { x: 1 + P, y: 1 + P, w: w - P * 2, h: (shape === "circle" ? w : h) - P * 2 };
     lg.save();
+    if (shape === "window") { windowPath(lg, 1, 1, w, h, wk); lg.clip(); }
     if (shape === "circle") { lg.beginPath(); lg.arc(w / 2 + 1, w / 2 + 1, w / 2, 0, 7); lg.clip(); }
     else if (shape === "round") { roundRect(lg, 1, 1, w, h, 22); lg.clip(); }
     if (P) { lg.fillStyle = "#ffffff"; lg.fillRect(1, 1, w, boxH); }
@@ -1590,12 +1920,23 @@
       lg.drawImage(photo, (photo.width - sw) / 2, (photo.height - sh) / 2, sw, sh, inner.x, inner.y, inner.w, inner.h);
     } else if (shape === "ticket") { // an empty ticket: plain paper
       lg.fillStyle = "#f3f1ec"; lg.fillRect(inner.x, inner.y, inner.w, inner.h);
+    } else if (shape === "window") { // an empty window: pale glass
+      lg.fillStyle = "#f7f2e6"; lg.fillRect(inner.x, inner.y, inner.w, inner.h);
     } else {
       lg.fillStyle = "rgba(0,0,0,.05)"; lg.fillRect(inner.x, inner.y, inner.w, inner.h);
       lg.setLineDash([6, 6]); lg.strokeStyle = "rgba(0,0,0,.25)"; lg.lineWidth = 2;
       lg.strokeRect(inner.x + 5, inner.y + 5, inner.w - 10, inner.h - 10);
     }
     lg.restore();
+    if (shape === "window") { // gold frame, with a thin dark line inside it like lead
+      const k = wk;
+      windowPath(lg, 1, 1, w, h, k);
+      const gold = lg.createLinearGradient(0, 0, w, h);
+      gold.addColorStop(0, "#f0dc9c"); gold.addColorStop(0.5, "#b8913e"); gold.addColorStop(1, "#ead08a");
+      lg.strokeStyle = gold; lg.lineWidth = 12; lg.stroke();
+      windowPath(lg, 7, 7, w - 12, h - 12, k);
+      lg.strokeStyle = "rgba(70,50,15,.45)"; lg.lineWidth = 1.5; lg.stroke();
+    }
     if (shape === "ticket") { // fine outline, and a round notch in the middle of each side (shared with the next ticket)
       const R = 12, notch = (ex) => { lg.beginPath(); lg.arc(ex, 1 + h / 2, R, 0, Math.PI * 2); };
       lg.strokeStyle = "rgba(0,0,0,.22)"; lg.lineWidth = 2; lg.strokeRect(1, 1, w, h);
@@ -1616,8 +1957,9 @@
     else {
       // On a photo the number sits on a small white tab (like a stamp's value) so its color reads.
       const tw = lg.measureText(label).width + 14, th = 28;
-      const right = shape === "circle" ? w / 2 + 1 + tw / 2 : inner.x + inner.w - 6;
-      const bottom = shape === "circle" ? w - 10 : inner.y + inner.h - 6;
+      const mid = shape === "circle" || shape === "window";
+      const right = mid ? w / 2 + 1 + tw / 2 : inner.x + inner.w - 6;
+      const bottom = shape === "circle" ? w - 10 : shape === "window" ? h - 12 : inner.y + inner.h - 6;
       if (photo) { lg.fillStyle = "rgba(255,255,255,.92)"; roundRect(lg, right - tw, bottom - th, tw, th, 8); lg.fill(); }
       lg.fillStyle = photo || dow === 0 || dow === 6 ? dayInk : ink;
       lg.textAlign = "center";
@@ -1634,6 +1976,16 @@
       g.drawImage(layer, x - 1, y - 1);
     }
     g.restore();
+  }
+  // Window frames, one per day in turn: arch, oval, cut corners, rounded.
+  function windowPath(g, x, y, w, h, kind) {
+    g.beginPath();
+    if (kind === 0 || kind === 4) { // arch, or a low dome on wide windows
+      const ry = kind === 0 ? Math.min(w / 2, h * 0.55) : h * 0.32;
+      g.moveTo(x, y + h); g.lineTo(x, y + ry); g.ellipse(x + w / 2, y + ry, w / 2, ry, 0, Math.PI, 0); g.lineTo(x + w, y + h); g.closePath();
+    } else if (kind === 1) g.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+    else if (kind === 2) { const c = Math.min(w, h) * 0.17; g.moveTo(x + c, y); g.lineTo(x + w - c, y); g.lineTo(x + w, y + c); g.lineTo(x + w, y + h - c); g.lineTo(x + w - c, y + h); g.lineTo(x + c, y + h); g.lineTo(x, y + h - c); g.lineTo(x, y + c); g.closePath(); }
+    else { roundRect(g, x, y, w, h, Math.min(w, h) * 0.1); }
   }
   function hole(g, x, y) { g.beginPath(); g.arc(x, y, 7, 0, 7); g.fill(); }
   function roundRect(g, x, y, w, h, r) {
@@ -3809,8 +4161,21 @@
     const q = e.target.closest(".al-pm-q");
     if (q) { album.pmCenter = album.pmCenter === q.dataset.pm ? "" : q.dataset.pm; saveAlbumOpts(); return; }
     const st = e.target.closest(".stp[data-day]");
-    if (st) { const day = st.dataset.day; closeAlbum(); calMonth = dayOf(day); calMonth.setDate(1); openDiary(day); }
+    if (!st) return;
+    const day = st.dataset.day, open = () => { closeAlbum(); calMonth = dayOf(day); calMonth.setDate(1); openDiary(day); };
+    if (album.shape !== "window" || !albumStamps || !albumStamps.paintWindow) { open(); return; }
+    // 창문: one tap = the next window shape, two quick taps = open that day's diary.
+    if (winTap && winTap.day === day) { clearTimeout(winTap.timer); winTap = null; open(); return; }
+    if (winTap) clearTimeout(winTap.timer);
+    winTap = { day, timer: setTimeout(() => {
+      winTap = null;
+      const s = albumStamps.list.find((x) => x.key === day);
+      if (!s) return;
+      nextWindow(s, albumStamps.y, albumStamps.mo);
+      albumStamps.paintWindow(s, true);
+    }, 260) };
   });
+  let winTap = null;
   $("album").addEventListener("change", (e) => { if (e.target.id === "al-empty") { album.empty = e.target.checked; saveAlbumOpts(); } });
   // Typing in the postmark's middle redraws only the header, so the box keeps focus.
   $("album").addEventListener("input", (e) => {
