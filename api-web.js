@@ -82,6 +82,7 @@
     if (!isHTML(body)) return body;
     return body.slice(HTML_MARKER.length)
       .replace(/<br\s*\/?>|<\/(div|p|li|h[1-6])>/gi, "\n")
+      .replace(/<img\b[^>]*>/gi, "📷") // a photo-only memo isn't blank (same as remote.go)
       .replace(/<!--[\s\S]*?-->|<[^>]*>/g, "")
       .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (m, e) => {
         if (e[0] === "#") return String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : +e.slice(1));
@@ -95,7 +96,7 @@
   function titleOf(body) {
     for (const line of plainOf(body).split("\n")) {
       const t = line.replace(/^[☐☑]+/, "").trim(); // same as TitleOf in remote.go
-      if (t) return Array.from(t).slice(0, 40).join("");
+      if (t.replace(/📷|\s/g, "")) return Array.from(t).slice(0, 40).join("");
     }
     return "제목 없음";
   }
@@ -314,11 +315,79 @@
     }
   }
 
+  // ---------- photos (same layout as images.go): bytes in IndexedDB, files in "CloudMemo/사진" ----------
+  const IMG_FOLDER = "사진", IMG_PROP = "cmImage", IMG_MAX = 8 << 20;
+  const okImageId = (id) => /^[0-9a-f]{24}$/.test(id);
+  let imgDB = null, imgFolderId = "";
+  function idb() {
+    if (imgDB) return imgDB;
+    imgDB = new Promise((ok, fail) => {
+      const r = indexedDB.open("cloudmemo", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("images");
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => { imgDB = null; fail(r.error); };
+    });
+    return imgDB;
+  }
+  async function idbDo(mode, fn) {
+    const db = await idb();
+    return new Promise((ok, fail) => {
+      const tx = db.transaction("images", mode), st = tx.objectStore("images");
+      const req = fn(st);
+      tx.oncomplete = () => ok(req && req.result);
+      tx.onerror = () => fail(tx.error);
+      tx.onabort = () => fail(tx.error || new Error("저장 공간이 부족해"));
+    });
+  }
+  const imgGet = (id) => idbDo("readonly", (st) => st.get(id));
+  const imgPut = (id, rec) => idbDo("readwrite", (st) => st.put(rec, id));
+  async function imagesFolder() {
+    if (imgFolderId) return imgFolderId;
+    const { id: parent } = await remote.folder();
+    const q = `name = '${IMG_FOLDER}' and mimeType = '${FOLDER_MIME}' and trashed = false and '${parent}' in parents`;
+    const r = await (await gfetch(`${API}/files?q=${encodeURIComponent(q)}&fields=files(id)&orderBy=createdTime`)).json();
+    if (r.files && r.files.length) return (imgFolderId = r.files[0].id);
+    const f = await (await gfetch(`${API}/files?fields=id`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: IMG_FOLDER, mimeType: FOLDER_MIME, parents: [parent] }),
+    })).json();
+    return (imgFolderId = f.id);
+  }
+  async function findImage(id) {
+    const q = `appProperties has { key='${IMG_PROP}' and value='${id}' } and trashed = false`;
+    const r = await (await gfetch(`${API}/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1`)).json();
+    return (r.files && r.files[0] && r.files[0].id) || "";
+  }
+  async function uploadImage(id, blob) {
+    const folder = await imagesFolder();
+    const mime = blob.type || "image/jpeg", ext = { "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif" }[mime] || ".jpg";
+    const d = new Date(), p2 = (n) => String(n).padStart(2, "0");
+    const name = `사진 ${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())} ${id.slice(0, 6)}${ext}`;
+    const b = "cm" + newId();
+    const meta = { name, mimeType: mime, parents: [folder], appProperties: { [IMG_PROP]: id } };
+    const body = new Blob([`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${b}\r\nContent-Type: ${mime}\r\n\r\n`,
+                           blob, `\r\n--${b}--`]);
+    const f = await (await gfetch(`${UPLOAD}/files?uploadType=multipart&fields=id`,
+      { method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + b }, body })).json();
+    return f.id;
+  }
+  // Photos added on this device go up after each sync round.
+  async function uploadPendingImages() {
+    const all = await idbDo("readonly", (st) => st.getAll()).catch(() => []);
+    const keys = await idbDo("readonly", (st) => st.getAllKeys()).catch(() => []);
+    for (let i = 0; i < keys.length; i++) {
+      const rec = all[i];
+      if (!rec || rec.driveId) continue;
+      const fid = (await findImage(keys[i])) || (await uploadImage(keys[i], rec.blob));
+      await imgPut(keys[i], { ...rec, driveId: fid });
+    }
+  }
+
   async function ensureAccount() {
     const r = await (await gfetch(`${API}/about?fields=user(emailAddress)`)).json();
     const email = (r.user && r.user.emailAddress) || "";
     const prev = ls.get(K.acct, "");
-    if (email && prev && email !== prev) { resetSync(); folderId = ""; }
+    if (email && prev && email !== prev) { resetSync(); folderId = ""; imgFolderId = ""; }
     if (email) ls.set(K.acct, email);
   }
   let accountChecked = false;
@@ -329,6 +398,7 @@
     try {
       if (!accountChecked) { await ensureAccount(); accountChecked = true; }
       await syncOnce();
+      await uploadPendingImages();
       lastSync = Date.now(); lastError = "";
     } catch (e) {
       lastError = e instanceof TypeError ? "오프라인 — 연결되면 동기화돼" : (e.message || String(e));
@@ -394,7 +464,7 @@
       const t = token();
       ls.del(K.token); ls.del(K.connected); ls.del(K.acct);
       for (const k of [K.calOK, K.calWant, K.calWriteOK, K.calWriteWant]) ls.del(k);
-      folderId = ""; lastSync = 0; lastError = ""; accountChecked = false;
+      folderId = ""; imgFolderId = ""; lastSync = 0; lastError = ""; accountChecked = false;
       resetSync();
       if (t) fetch("https://oauth2.googleapis.com/revoke?token=" + encodeURIComponent(t), { method: "POST" }).catch(() => {});
     },
@@ -410,6 +480,27 @@
       add: calendarAdd,
     },
     openURL(url) { window.open(url, "_blank", "noopener"); },
+    // Photos (same contract as the PC app): putImage(id, Blob), getImage(id) -> Blob or null.
+    async putImage(id, blob) {
+      if (!okImageId(id)) throw new Error("잘못된 사진 id");
+      if (!blob || !blob.size || blob.size > IMG_MAX) throw new Error("사진이 너무 커");
+      await imgPut(id, { blob, driveId: "" });
+      requestSync(2000);
+    },
+    async getImage(id) {
+      if (!okImageId(id)) return null;
+      const rec = await imgGet(id).catch(() => null);
+      if (rec && rec.blob) return rec.blob;
+      if (!token()) return null;
+      try { // first time on this device: fetch it from Drive and keep it
+        const fid = await findImage(id);
+        if (!fid) return null;
+        const blob = await (await gfetch(`${API}/files/${fid}?alt=media`)).blob();
+        if (!blob.size || blob.size > IMG_MAX) return null;
+        await imgPut(id, { blob, driveId: fid }).catch(() => {});
+        return blob;
+      } catch (e) { return null; }
+    },
   };
 
   async function calGet(url) {

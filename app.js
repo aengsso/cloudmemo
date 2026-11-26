@@ -75,6 +75,7 @@
           const parts = c.nodeValue.split("\n");
           parts.forEach((p, i) => { if (i) { lines.push(cur ?? ""); cur = null; } if (p || i) cur = (cur ?? "") + p; });
         } else if (c.nodeName === "BR") { lines.push(cur ?? ""); cur = null; }
+        else if (c.nodeName === "IMG") cur = (cur ?? "") + "📷"; // same mark as remote.go
         else if (c.nodeName === "HR") { end(); lines.push("―――"); }
         else if (BLOCK.has(c.nodeName)) { end(); walk(c); end(); }
         else if (c.nodeType === 1) walk(c);
@@ -125,11 +126,11 @@
   }
   // Only these tags/attributes survive; everything else is unwrapped or dropped.
   const TAGS = { B: "B", STRONG: "B", I: "I", EM: "I", U: "U", FONT: "FONT", SPAN: "SPAN", MARK: "SPAN",
-                 S: "S", STRIKE: "S", DEL: "S", CODE: "CODE", TIME: "TIME",
+                 S: "S", STRIKE: "S", DEL: "S", CODE: "CODE", TIME: "TIME", IMG: "IMG",
                  BR: "BR", HR: "HR", DIV: "DIV", P: "DIV",
                  LI: "DIV", H1: "DIV", H2: "DIV", H3: "DIV", H4: "DIV", H5: "DIV", H6: "DIV", BLOCKQUOTE: "DIV", PRE: "DIV",
                  SUMMARY: "DIV" };
-  const DROP = new Set(["SCRIPT", "STYLE", "TEMPLATE", "IFRAME", "OBJECT", "EMBED", "SVG", "MATH", "IMG", "VIDEO",
+  const DROP = new Set(["SCRIPT", "STYLE", "TEMPLATE", "IFRAME", "OBJECT", "EMBED", "SVG", "MATH", "VIDEO",
                         "AUDIO", "CANVAS", "INPUT", "TEXTAREA", "SELECT", "BUTTON", "HEAD", "TITLE", "META", "LINK"]);
   // Notion-style line types, kept as data-b on the line's <div> (headings, lists, quote, ...).
   const BTYPES = new Set(["h1", "h2", "h3", "ul", "ol", "quote", "callout", "code", "toggle"]);
@@ -160,6 +161,7 @@
     return "";
   }
   const ZW = /​/g; // zero-width space used to step out of inline code/bold made by typing
+  const IMG_ID = /^[0-9a-f]{24}$/; // photo ids (images.go / api-web.js)
   function cleanInto(src, dst) {
     for (const n of src.childNodes) {
       if (n.nodeType === 3) { const v = n.nodeValue.replace(ZW, ""); if (v) dst.appendChild(document.createTextNode(v)); continue; }
@@ -174,6 +176,14 @@
         if (b === "toggle" && n.getAttribute("data-c") === "1") el.dataset.c = "1";
       }
       if (tag === "TIME") { const d = n.getAttribute("datetime"); if (/^[\d\-T:]{4,19}$/.test(d || "")) el.setAttribute("datetime", d); }
+      if (tag === "IMG") { // only this app's photos (data-img id); src is filled in at runtime, never saved
+        const id = n.getAttribute("data-img");
+        if (!IMG_ID.test(id || "")) continue;
+        el.setAttribute("data-img", id);
+        el.alt = "사진";
+        dst.appendChild(el);
+        continue;
+      }
       if (tag === "FONT") {
         const c = normColor(n.getAttribute("color"));
         if (c) el.setAttribute("color", c);
@@ -200,7 +210,7 @@
   function trailingBr(br, line) {
     for (let n = br; n && n !== line; n = n.parentNode)
       for (let s = n.nextSibling; s; s = s.nextSibling)
-        if (s.textContent || (s.nodeType === 1 && (s.nodeName === "BR" || s.querySelector("br")))) return false;
+        if (s.textContent || (s.nodeType === 1 && (s.nodeName === "BR" || s.nodeName === "IMG" || s.querySelector("br,img")))) return false;
     return true;
   }
   function hasMergedLines(root) {
@@ -246,6 +256,7 @@
         else if (c.nodeType !== 1) continue;
         else if (c.id === CARET_ID) place(c.cloneNode(false), stack);
         else if (c.nodeName === "BR") push();
+        else if (c.nodeName === "IMG") place(c.cloneNode(false), stack);
         else if (c.nodeName === "HR") { if (filled()) push(); out.appendChild(document.createElement("hr")); }
         else if (BLOCK.has(c.nodeName)) {
           if (filled()) push();
@@ -290,7 +301,7 @@
     if (!root.firstChild) root.appendChild(Object.assign(document.createElement("div"), { innerHTML: "<br>" }));
   }
 
-  const RICH = "b,i,u,font,strong,em,hr,mark,s,strike,del,code,time,div[data-b],div[data-i],summary,h1,h2,h3,h4,h5,h6,blockquote,pre,li";
+  const RICH = "b,i,u,font,strong,em,hr,mark,s,strike,del,code,time,img[data-img],div[data-b],div[data-i],summary,h1,h2,h3,h4,h5,h6,blockquote,pre,li";
   const hasRich = (root) => !!root.querySelector(RICH) ||
     [...root.querySelectorAll("span[style]")].some((s) => normHighlight(s.style.backgroundColor));
   function serialize() {
@@ -316,6 +327,7 @@
     normalizeTop(frag);
     editor.replaceChildren(hasMergedLines(frag) ? splitLines(frag) : frag);
     applyFolds();
+    hydratePhotos(editor);
     shownBody = stored;
     savedBody = serialize();
     updateEmpty();
@@ -349,7 +361,7 @@
     editor.focus({ preventScroll: true });
     if (s.caret) restoreCaret(s.caret);
     else { const l = editor.lastElementChild; caretAt(l, l.textContent.length); }
-    updateEmpty(); applyFolds(); updateBlockState();
+    updateEmpty(); applyFolds(); updateBlockState(); hydratePhotos(editor);
     clearTimeout(saveTimer);
     saveTimer = setTimeout(flush, 400);
   }
@@ -367,16 +379,18 @@
     restoreState(hist[histAt]);
   }
   function updateEmpty() {
-    editor.classList.toggle("empty", editor.textContent === "" && editor.children.length <= 1);
+    editor.classList.toggle("empty", editor.textContent === "" && editor.children.length <= 1 && !editor.querySelector("img"));
   }
 
   // ---------- text helpers ----------
   function title(body) {
+    let photo = false;
     for (const line of plain(body).split("\n")) {
       const t = line.replace(BOX_RE, "").trim();
+      if (t && !t.replace(/📷|\s/g, "")) { photo = true; continue; } // a line of photos only
       if (t) return t;
     }
-    return "제목 없음";
+    return photo ? "📷 사진" : "제목 없음";
   }
   function snippet(body) {
     const lines = plain(body).split("\n").map((l) => l.trim()).filter(Boolean);
@@ -1559,6 +1573,106 @@
     putInline(t, " ");
     afterEdit();
   }
+  // ---------- photos ----------
+  // A memo keeps <img data-img="ID"> only; the picture (shrunk here first) is stored by the
+  // backend (images.go / api-web.js) and synced to Drive "CloudMemo/사진". src is runtime only.
+  const canPhoto = () => typeof api.putImage === "function" && typeof api.getImage === "function";
+  const photoURL = new Map(); // id -> Promise of an object URL ("" when not available yet)
+  function photoSrc(id) {
+    if (!photoURL.has(id)) {
+      photoURL.set(id, Promise.resolve(api.getImage(id))
+        .then((b) => (b ? URL.createObjectURL(b) : "")).catch(() => ""));
+    }
+    return photoURL.get(id);
+  }
+  function hydratePhotos(root) {
+    if (!canPhoto() || !root) return;
+    for (const img of root.querySelectorAll("img[data-img]")) {
+      if (img.getAttribute("src")) continue;
+      const id = img.dataset.img;
+      img.classList.add("loading");
+      photoSrc(id).then((u) => {
+        img.classList.remove("loading");
+        if (u) { img.src = u; img.classList.remove("missing"); }
+        else { img.classList.add("missing"); photoURL.delete(id); } // try again on the next render
+      });
+    }
+  }
+  const newPhotoId = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) => x.toString(16).padStart(2, "0")).join("");
+  // Long side at most 1600px, JPEG ~82%: a phone photo of several MB becomes a few hundred KB.
+  async function shrinkPhoto(file) {
+    let src = null;
+    try { src = await createImageBitmap(file); } catch (e) {}
+    if (!src) {
+      src = await new Promise((ok, fail) => {
+        const im = new Image();
+        im.onload = () => ok(im);
+        im.onerror = () => fail(new Error("이 사진은 열 수 없어"));
+        im.src = URL.createObjectURL(file);
+      });
+    }
+    const w = src.naturalWidth || src.width, h = src.naturalHeight || src.height;
+    const k = Math.min(1, 1600 / Math.max(w, h, 1));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+    const g = c.getContext("2d");
+    g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); // transparent PNGs get a white back
+    g.drawImage(src, 0, 0, c.width, c.height);
+    if (src.close) src.close();
+    const blob = await new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.82));
+    if (!blob) throw new Error("사진을 줄이지 못했어");
+    return blob;
+  }
+  function photoBlocked() {
+    const m = memos.find((x) => x.id === currentId);
+    if (!m) return "메모를 먼저 열어 줘";
+    if (isSecret(m) || (isDiary(m) && diaryLocked())) return "잠긴 메모와 잠긴 일기에는 아직 사진을 넣을 수 없어. 사진 암호화는 다음 단계에서 넣을게.";
+    return "";
+  }
+  async function insertPhotos(files, at) {
+    files = [...(files || [])].filter((f) => f && /^image\//.test(f.type));
+    if (!files.length || !canPhoto()) return;
+    const why = photoBlocked();
+    if (why) { alert(why); return; }
+    const memoId = currentId;
+    focusEditor(); ensureLines(); fixLines();
+    if (at) { sel().removeAllRanges(); sel().addRange(at); }
+    let line = inEditor() ? lineOf(sel().anchorNode) : editor.lastElementChild;
+    flashMeta(files.length > 1 ? `사진 ${files.length}장 넣는 중…` : "사진 넣는 중…");
+    for (const f of files) {
+      let blob, id;
+      try {
+        blob = await shrinkPhoto(f);
+        id = newPhotoId();
+        await api.putImage(id, blob);
+      } catch (e) { alert("사진을 넣지 못했어: " + ((e && e.message) || e)); continue; }
+      if (currentId !== memoId) return; // switched memo meanwhile
+      const url = URL.createObjectURL(blob);
+      photoURL.set(id, Promise.resolve(url));
+      const img = Object.assign(document.createElement("img"), { alt: "사진", src: url });
+      img.dataset.img = id;
+      // An empty line takes the photo; otherwise it goes on its own line below.
+      if (line && line.nodeName === "DIV" && !line.textContent.trim() && !line.querySelector("img,hr")) line.replaceChildren(img);
+      else {
+        const div = document.createElement("div");
+        div.appendChild(img);
+        if (line) line.after(div); else editor.appendChild(div);
+        line = div;
+      }
+    }
+    if (!line) return;
+    let next = line.nextElementSibling; // keep typing right below the photos
+    if (!next || next.nodeName !== "DIV" || next.textContent.trim() || next.querySelector("img,hr")) {
+      next = document.createElement("div");
+      next.appendChild(document.createElement("br"));
+      line.after(next);
+    }
+    caretAt(next, 0);
+    next.scrollIntoView({ block: "nearest" });
+    afterEdit();
+    flashMeta(files.length > 1 ? `사진 ${files.length}장을 넣었어` : "사진을 넣었어");
+  }
+
   // Puts an inline element at the caret (replacing a selection) and the caret right after it.
   // Done on the DOM: insertHTML would wrap the following text in a span with fixed colors.
   function putInline(el, tail) {
@@ -1784,6 +1898,7 @@
         if (c === OPEN || c === DONE) el.classList.add("box-line", ...(c === DONE ? ["done"] : []));
       }
     }
+    hydratePhotos(page);
     // Font follows the box size and the chosen scale, then shrinks until the page fits.
     let size = Math.max(12, Math.min(page.clientWidth / 15, page.clientHeight / 8) * pres.scale);
     const fits = () => page.scrollHeight <= page.clientHeight + 1 && page.scrollWidth <= page.clientWidth + 1;
@@ -2077,6 +2192,7 @@
       if (pos) restoreCaret(pos);
     }
     renderAll();
+    hydratePhotos(editor); // photos that weren't on Drive yet may be there now
   }
 
   async function flush() {
@@ -2331,6 +2447,9 @@
   editor.addEventListener("paste", (e) => {
     const cd = e.clipboardData;
     if (!cd) return;
+    // A copied picture (screenshot, image from a page or Photos) becomes a photo.
+    const pics = [...(cd.files || [])].filter((f) => /^image\//.test(f.type));
+    if (pics.length && canPhoto()) { e.preventDefault(); insertPhotos(pics); return; }
     const html = cd.getData("text/html"), t = cd.getData("text/plain");
     e.preventDefault();
     if (html) {
@@ -2362,6 +2481,27 @@
     afterEdit();
   });
   editor.addEventListener("click", toggleBoxAtCaret);
+  // Dropping picture files puts them where they were dropped.
+  const hasFiles = (e) => e.dataTransfer && [...(e.dataTransfer.types || [])].includes("Files");
+  editor.addEventListener("dragover", (e) => { if (hasFiles(e) && canPhoto()) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } });
+  editor.addEventListener("drop", (e) => {
+    if (!hasFiles(e) || !canPhoto()) return;
+    e.preventDefault();
+    let at = null;
+    if (document.caretRangeFromPoint) at = document.caretRangeFromPoint(e.clientX, e.clientY);
+    else if (document.caretPositionFromPoint) {
+      const p = document.caretPositionFromPoint(e.clientX, e.clientY);
+      if (p) { at = document.createRange(); at.setStart(p.offsetNode, p.offset); at.collapse(true); }
+    }
+    insertPhotos(e.dataTransfer.files, at && editor.contains(at.startContainer) ? at : null);
+  });
+  $("f-photo").hidden = !canPhoto();
+  $("f-photo").onclick = () => {
+    const why = photoBlocked();
+    if (why) { alert(why); return; }
+    $("photo-input").click();
+  };
+  $("photo-input").onchange = (e) => { const fs = [...e.target.files]; e.target.value = ""; insertPhotos(fs); };
   // Clicking the ▸ arrow of a toggle (its left padding) folds / unfolds it.
   editor.addEventListener("mousedown", (e) => {
     const line = e.target.nodeType === 1 ? lineOf(e.target) : null;

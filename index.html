@@ -17,7 +17,7 @@
 <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
 <!--WEB-ONLY-END-->
-<link rel="stylesheet" href="style.css?v=26">
+<link rel="stylesheet" href="style.css?v=27">
 </head>
 <body>
 <div id="app" class="show-list">
@@ -142,6 +142,10 @@
       <button id="f-indent" class="fmt" title="들여쓰기 (Tab)" aria-label="들여쓰기">
         <svg viewBox="0 0 24 24" width="19" height="19"><path d="M4 5.5h16M11 10h9M11 14h9M4 18.5h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M4.5 9.5l3 2.5-3 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
       </button>
+      <button id="f-photo" class="fmt" title="사진 넣기 (붙여넣기·끌어다 놓기도 돼)" aria-label="사진 넣기">
+        <svg viewBox="0 0 24 24" width="19" height="19"><rect x="3.5" y="5" width="17" height="14" rx="3" stroke="currentColor" stroke-width="1.8" fill="none"/><circle cx="9" cy="10" r="1.6" fill="currentColor"/><path d="M5 17l4.5-4.5 3 3 2.5-2.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+      <input type="file" id="photo-input" accept="image/*" multiple hidden>
       <button id="f-time" class="fmt" title="지금 날짜·시간 넣기 (F5)" aria-label="지금 날짜와 시간 넣기">
         <svg viewBox="0 0 24 24" width="19" height="19"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
       </button>
@@ -287,6 +291,7 @@
       <section data-h="tips" hidden>
         <ul class="tips">
           <li>첫 줄이 메모 <b>제목</b>이 돼.</li>
+          <li><b>사진</b>은 서식 줄의 사진 버튼, 붙여넣기, 끌어다 놓기로 넣어. 알맞은 크기로 줄여서 드라이브 'CloudMemo/사진' 폴더에 따로 저장돼.</li>
           <li>서식 줄의 <b>캘린더(+) 버튼</b>을 누르면 그 줄이 구글 캘린더 새 일정으로 열려. "11월 28일 오후 3시"나 F5 날짜가 있으면 날짜도 채워져.</li>
           <li>일기 달력 위 <b>캘린더 버튼</b>을 켜면 구글 캘린더 일정이 달력에 점으로, 아래에 목록으로 보여. <b>＋ 일정 추가</b>로 그날 일정을 바로 넣을 수 있어.</li>
           <li>☐를 누르면 체크돼. 목록의 <b>5/6</b>은 체크한 개수야.</li>
@@ -313,9 +318,9 @@
   </form>
 </div>
 <!--WEB-ONLY-START-->
-<script src="config.js?v=26"></script>
-<script src="api-web.js?v=26"></script>
+<script src="config.js?v=27"></script>
+<script src="api-web.js?v=27"></script>
 <!--WEB-ONLY-END-->
-<script src="app.js?v=26"></script>
+<script src="app.js?v=27"></script>
 </body>
 </html>
