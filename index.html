@@ -17,7 +17,7 @@
 <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
 <!--WEB-ONLY-END-->
-<link rel="stylesheet" href="style.css?v=23">
+<link rel="stylesheet" href="style.css?v=24">
 </head>
 <body>
 <div id="app" class="show-list">
@@ -44,6 +44,9 @@
       <div class="cal-head">
         <span id="cal-title"></span>
         <button id="cal-today" class="text-btn">오늘</button>
+        <button id="cal-gcal" class="icon-btn" title="구글 캘린더 일정 보기" aria-label="구글 캘린더 일정" hidden>
+          <svg viewBox="0 0 24 24" width="19" height="19"><rect x="3.5" y="5" width="17" height="15.5" rx="3" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M3.5 9.5h17M8 3.2v3.6M16 3.2v3.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle class="gcal-dot" cx="12" cy="14.8" r="2.3" fill="currentColor"/></svg>
+        </button>
         <button id="cal-lock" class="icon-btn" title="일기 잠금" aria-label="일기 잠금"></button>
         <button id="cal-prev" class="icon-btn" aria-label="이전 달">
           <svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
@@ -53,6 +56,7 @@
         </button>
       </div>
       <div class="cal-grid" id="cal-grid"></div>
+      <div class="cal-events" id="cal-events" hidden aria-live="polite"></div>
       <ul class="diary-list" id="diary-list" aria-label="이 달의 일기"></ul>
       <div class="diary-locked" id="diary-locked" hidden>
         <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5" fill="currentColor"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
@@ -140,6 +144,9 @@
       </button>
       <button id="f-time" class="fmt" title="지금 날짜·시간 넣기 (F5)" aria-label="지금 날짜와 시간 넣기">
         <svg viewBox="0 0 24 24" width="19" height="19"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+      <button id="f-cal" class="fmt" title="이 줄을 구글 캘린더 일정으로 추가" aria-label="구글 캘린더에 추가">
+        <svg viewBox="0 0 24 24" width="19" height="19"><rect x="3.5" y="5" width="17" height="15.5" rx="3" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M3.5 9.5h17M8 3.2v3.6M16 3.2v3.6M12 12.3v5.4M9.3 15h5.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
       <button id="f-help" class="fmt" title="단축키와 사용법 (F1)" aria-label="단축키와 사용법">
         <svg viewBox="0 0 24 24" width="19" height="19"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.7-.9 1.3v.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><circle cx="12" cy="16.6" r="1.1" fill="currentColor"/></svg>
@@ -280,6 +287,8 @@
       <section data-h="tips" hidden>
         <ul class="tips">
           <li>첫 줄이 메모 <b>제목</b>이 돼.</li>
+          <li>서식 줄의 <b>캘린더(+) 버튼</b>을 누르면 그 줄이 구글 캘린더 새 일정으로 열려. "11월 28일 오후 3시"나 F5 날짜가 있으면 날짜도 채워져.</li>
+          <li>일기 달력 위 <b>캘린더 버튼</b>을 켜면 구글 캘린더 일정이 달력에 점으로, 아래에 목록으로 보여.</li>
           <li>☐를 누르면 체크돼. 목록의 <b>5/6</b>은 체크한 개수야.</li>
           <li><b>비밀 폴더</b>와 잠긴 일기는 암호화돼. 비밀번호를 잊으면 되살릴 수 없어.</li>
           <li>목록을 숨겨도 위쪽 <b>폴더 버튼</b>으로 다른 메모를 열 수 있어.</li>
@@ -304,9 +313,9 @@
   </form>
 </div>
 <!--WEB-ONLY-START-->
-<script src="config.js?v=23"></script>
-<script src="api-web.js?v=23"></script>
+<script src="config.js?v=24"></script>
+<script src="api-web.js?v=24"></script>
 <!--WEB-ONLY-END-->
-<script src="app.js?v=23"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>

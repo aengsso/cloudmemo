@@ -755,7 +755,7 @@
     lb.title = !locked ? "일기 잠그기" : closed ? "일기 열기" : "일기 잠금 (열림)";
     $("diary").classList.toggle("locked", closed);
     $("diary-locked").hidden = !closed;
-    if (closed) { $("cal-title").textContent = "일기"; return; }
+    if (closed) { $("cal-title").textContent = "일기"; renderCalEvents(ymd(new Date()), true); return; }
     const y = calMonth.getFullYear(), mo = calMonth.getMonth();
     $("cal-title").textContent = `${y}년 ${mo + 1}월`;
     const byDay = new Map();
@@ -767,8 +767,10 @@
     for (let d = 1; d <= days; d++) {
       const key = `${y}-${pad(mo + 1)}-${pad(d)}`, list = byDay.get(key), dow = (first + d - 1) % 7;
       const cls = ["day", dow === 0 ? "sun" : dow === 6 ? "sat" : "", list ? "has" : "", key === today ? "today" : "", key === selDay ? "sel" : ""].filter(Boolean).join(" ");
-      const tip = list ? esc(title(textOf(list[0]))) : "";
-      html += `<button class="${cls}" data-date="${key}" title="${tip}" aria-label="${mo + 1}월 ${d}일${list ? ", 일기 있음" : ""}">${d}</button>`;
+      const evs = calShowing() ? cal.byDay.get(key) || [] : [];
+      const tip = [list ? title(textOf(list[0])) : "", ...evs.slice(0, 4).map((e) => (e.allDay ? "" : timeLabel(e.start) + " ") + e.title)].filter(Boolean).join("\n");
+      const dots = evs.length ? `<span class="ev-dots">${evs.slice(0, 3).map((e) => `<i style="background:${esc(e.color || "var(--accent)")}"></i>`).join("")}</span>` : "";
+      html += `<button class="${cls}" data-date="${key}" title="${esc(tip)}" aria-label="${mo + 1}월 ${d}일${list ? ", 일기 있음" : ""}${evs.length ? `, 일정 ${evs.length}개` : ""}">${d}${dots}</button>`;
     }
     $("cal-grid").innerHTML = html;
     const prefix = `${y}-${pad(mo + 1)}-`;
@@ -779,7 +781,168 @@
           <div class="dd"><b>${+m.diary.slice(8)}</b><span>${WD[dayOf(m.diary).getDay()]}</span></div>
           <div class="dt"><div class="t">${esc(title(textOf(m)))}</div><div class="s">${esc(snippet(textOf(m)))}</div></div></li>`).join("")
       : `<li class="none">이 달에 쓴 일기가 없어. 날짜를 눌러서 써봐.</li>`;
+    // Events of the open entry's day (or today, or the 1st of the shown month).
+    const shownDay = selDay && selDay.startsWith(prefix) ? selDay : today.startsWith(prefix) ? today : prefix + "01";
+    renderCalEvents(shownDay, false);
+    calLoad(false);
   }
+  // ---------- Google Calendar events on the diary calendar (read only, opt-in) ----------
+  const CAL_ON_KEY = "cloudmemo.calOn";
+  const calAPI = () => (api.calendar && typeof api.calendar.events === "function" ? api.calendar : null);
+  const cal = { on: !!lsGet(CAL_ON_KEY, false), granted: false, month: "", byDay: new Map(), err: "", loading: false, at: 0 };
+  const calShowing = () => !!calAPI() && cal.on && cal.granted;
+  // Events grouped by local day ("YYYY-MM-DD"); an event spanning days is listed on each.
+  function groupEvents(list) {
+    const by = new Map();
+    const add = (k, e) => (by.get(k) || by.set(k, []).get(k)).push(e);
+    for (const e of list) {
+      let s, last;
+      if (e.allDay) { s = dayOf(e.start); last = dayOf(e.end || e.start); last.setDate(last.getDate() - 1); }
+      else { s = new Date(e.start); last = new Date(e.end || e.start); if (last > s) last = new Date(last.getTime() - 1); }
+      const d = new Date(s.getFullYear(), s.getMonth(), s.getDate());
+      for (let n = 0; d <= last && n < 62; n++, d.setDate(d.getDate() + 1)) add(ymd(d), e);
+      if (last < s) add(ymd(s), e);
+    }
+    return by;
+  }
+  async function calLoad(force) {
+    const c = calAPI();
+    if (!c || !cal.on) return;
+    const y = calMonth.getFullYear(), mo = calMonth.getMonth(), key = `${y}-${mo}`;
+    if (cal.loading || (!force && cal.month === key && Date.now() - cal.at < 10 * 60000)) return;
+    cal.loading = true;
+    try {
+      const st = await c.status();
+      cal.granted = !!(st && st.granted);
+      if (cal.granted) {
+        const list = await c.events(new Date(y, mo, 1).toISOString(), new Date(y, mo + 1, 1).toISOString());
+        cal.byDay = groupEvents(list || []);
+        cal.err = "";
+      }
+      cal.month = key; cal.at = Date.now();
+    } catch (e) {
+      cal.err = (e && e.message) || String(e); cal.month = key; cal.at = Date.now();
+    }
+    cal.loading = false;
+    renderDiary();
+  }
+  async function calConnect() {
+    const c = calAPI();
+    if (!c) return;
+    cal.on = true; lsSet(CAL_ON_KEY, true);
+    const st = await c.status();
+    if (st && st.granted) { cal.granted = true; calLoad(true); return; }
+    if (!confirm("구글 캘린더 일정을 일기 달력에 같이 보여줄까?\n\n구글 로그인 화면이 열리면 '캘린더 보기' 권한을 허용해 줘. " +
+                 "'확인되지 않은 앱' 화면이 나오면 고급 → CloudMemo(으)로 이동을 누르면 돼.\n일정은 읽기만 하고 바꾸지 않아.")) {
+      cal.on = false; lsSet(CAL_ON_KEY, false); renderDiary(); return;
+    }
+    await flush();
+    c.connect(); // web: goes to Google and comes back; PC app: browser, then a "calendar" event
+    flashMeta("브라우저에서 구글 캘린더 권한을 허용해 줘");
+  }
+  function calMenu(anchor) {
+    if (!calShowing()) { calConnect(); return; }
+    openMenu(anchor, [
+      { label: "일정 새로고침", onPick: () => calLoad(true) },
+      { label: "구글 캘린더 열기", onPick: () => openExternal("https://calendar.google.com/calendar/r") },
+      "-",
+      { label: "일정 숨기기", onPick: () => { cal.on = false; lsSet(CAL_ON_KEY, false); renderDiary(); } },
+    ]);
+  }
+  const openExternal = (url) => Promise.resolve(api.openURL ? api.openURL(url) : window.open(url, "_blank", "noopener")).catch(() => {});
+  const timeLabel = (iso) => new Date(iso).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
+  function renderCalEvents(day, closed) {
+    const box = $("cal-events"), btn = $("cal-gcal");
+    btn.hidden = !calAPI();
+    btn.classList.toggle("on", calShowing());
+    btn.title = calShowing() ? "구글 캘린더 일정 (켜짐)" : "구글 캘린더 일정 보기";
+    if (!calShowing() || closed) { box.hidden = true; return; }
+    box.hidden = false;
+    const list = cal.byDay.get(day) || [];
+    const d = dayOf(day);
+    const head = `<div class="ce-head">${d.getMonth() + 1}월 ${d.getDate()}일 ${WD[d.getDay()]}요일 일정</div>`;
+    if (cal.err) {
+      box.innerHTML = head + `<div class="ce-none err">${esc(cal.err)} <button class="text-btn" data-ce="retry">다시 시도</button></div>`;
+      return;
+    }
+    box.innerHTML = head + (list.length ? list.map((e, i) => `
+      <button class="ce" data-ce="${i}" title="${esc(e.calendar || "")}">
+        <i style="background:${esc(e.color || "var(--accent)")}"></i>
+        <span class="ce-t">${e.allDay ? "종일" : esc(timeLabel(e.start))}</span>
+        <span class="ce-n">${esc(e.title)}</span>
+      </button>`).join("") : `<div class="ce-none">${cal.loading ? "불러오는 중…" : "일정 없음"}</div>`);
+    box.onclick = (ev) => {
+      const b = ev.target.closest("[data-ce]");
+      if (!b) return;
+      if (b.dataset.ce === "retry") { calLoad(true); return; }
+      const e = list[+b.dataset.ce];
+      if (e && e.link) openExternal(e.link);
+    };
+  }
+
+  // ---------- 📅 add a line to Google Calendar (Google's own "new event" page, no permission needed) ----------
+  // Finds a date and time in the line: an F5 time chip, "2026-11-28", "11월 28일", "11/28",
+  // "오늘/내일/모레", "오후 3시 반", "15:00".
+  function parseWhen(text, chip) {
+    if (chip) { const [d, hm] = chip.split("T"); return { date: d, time: hm || "" }; }
+    const now = new Date();
+    let date = "", time = "", m;
+    const ok = (mo, d) => mo >= 1 && mo <= 12 && d >= 1 && d <= 31;
+    if ((m = text.match(/(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})/)) && ok(+m[2], +m[3])) date = `${m[1]}-${pad(+m[2])}-${pad(+m[3])}`;
+    else if (((m = text.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/)) || (m = text.match(/(?:^|[^\d/])(\d{1,2})\/(\d{1,2})(?![\d/])/))) && ok(+m[1], +m[2])) {
+      let y = now.getFullYear();
+      if (+m[1] < now.getMonth() + 1 - 6) y++; // "1월 5일" written in November is next year
+      date = `${y}-${pad(+m[1])}-${pad(+m[2])}`;
+    } else {
+      const rel = /모레/.test(text) ? 2 : /내일/.test(text) ? 1 : /오늘/.test(text) ? 0 : -1;
+      if (rel >= 0) { const x = new Date(now); x.setDate(x.getDate() + rel); date = ymd(x); }
+    }
+    if ((m = text.match(/(오전|오후|저녁|밤|아침)?\s*(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분|\s*(반))?/)) ||
+        (m = text.match(/(오전|오후)?\s*(\d{1,2}):(\d{2})(?!\d)/))) {
+      let h = +m[2];
+      const mi = m[4] ? 30 : +(m[3] || 0);
+      if (/오후|저녁|밤/.test(m[1] || "") && h < 12) h += 12;
+      if (m[1] === "오전" && h === 12) h = 0;
+      if (h <= 23 && mi <= 59) time = `${pad(h)}:${pad(mi)}`;
+    }
+    return { date, time };
+  }
+  function calendarURL(title, when, details) {
+    const p = new URLSearchParams({ action: "TEMPLATE", text: title });
+    if (when.date) {
+      const [y, mo, d] = when.date.split("-").map(Number);
+      const compact = (x) => ymd(x).replace(/-/g, "");
+      if (when.time) {
+        const [h, mi] = when.time.split(":").map(Number);
+        const s = new Date(y, mo - 1, d, h, mi), e = new Date(s.getTime() + 3600000);
+        const f = (x) => `${compact(x)}T${pad(x.getHours())}${pad(x.getMinutes())}00`;
+        p.set("dates", `${f(s)}/${f(e)}`);
+        try { p.set("ctz", Intl.DateTimeFormat().resolvedOptions().timeZone); } catch (x) {}
+      } else {
+        const s = new Date(y, mo - 1, d), e = new Date(y, mo - 1, d + 1);
+        p.set("dates", `${compact(s)}/${compact(e)}`);
+      }
+    }
+    if (details) p.set("details", details);
+    return "https://calendar.google.com/calendar/render?" + p;
+  }
+  function addToCalendar() {
+    const m = memos.find((x) => x.id === currentId);
+    if (!m) return;
+    const s = sel();
+    const line = inEditor() ? lineOf(s.anchorNode) : null;
+    const picked = inEditor() && !s.isCollapsed ? s.toString().trim() : "";
+    const chipEl = line && line.querySelector("time[datetime]");
+    let text = picked || (line ? line.textContent : "");
+    const when = parseWhen((line ? line.textContent : "") + " " + picked, chipEl && chipEl.getAttribute("datetime"));
+    if (chipEl) text = text.replace(chipEl.textContent, " ");
+    let titleText = text.replace(ZW, "").replace(BOX_RE, "").replace(/\s+/g, " ").trim() || title(textOf(m));
+    if (!when.date && m.diary) when.date = m.diary; // a diary line is about that day
+    const url = calendarURL(titleText, when, `클라우드 메모 "${title(textOf(m))}"에서`);
+    openExternal(url);
+    flashMeta(when.date ? "구글 캘린더에서 저장을 눌러 줘" : "날짜를 고르고 저장을 눌러 줘");
+  }
+
   // Opens the entry for a day, or starts a new one (discarded if left empty).
   async function openDiary(date) {
     if (diaryLocked() && !(await unlockVault())) { renderAll(); return; }
@@ -1966,6 +2129,7 @@
 
   window.__cmEvent = (ev) => {
     if (ev === "changed") reload();
+    if (ev === "calendar") calLoad(true); // PC app: calendar permission granted in the browser
     renderStatus();
   };
 
@@ -2134,6 +2298,9 @@
   $("cal-next").onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderDiary(); };
   $("cal-today").onclick = () => { const t = new Date(); calMonth = new Date(t.getFullYear(), t.getMonth(), 1); renderDiary(); };
   $("cal-lock").onclick = (e) => diaryLockMenu(e.currentTarget);
+  $("cal-gcal").onclick = (e) => calMenu(e.currentTarget);
+  $("f-cal").onclick = addToCalendar;
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && tab === "diary") calLoad(false); });
   $("diary-unlock").onclick = () => unlockVault().then(renderAll);
   $("cal-grid").addEventListener("click", (e) => { const b = e.target.closest("button[data-date]"); if (b) openDiary(b.dataset.date); });
   $("diary-list").addEventListener("click", (e) => { const li = e.target.closest("li[data-id]"); if (li) select(li.dataset.id); });

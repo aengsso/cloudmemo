@@ -494,7 +494,9 @@ section[data-h="tips"] .tips { margin-top: 0; }
 #app.tab-diary .search-wrap, #app.tab-diary #folders, #app.tab-diary #list { display: none; }
 #app.tab-diary #diary { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 8px; }
 .cal-head { display: flex; align-items: center; gap: 2px; padding: 0 0 6px 4px; }
-#cal-title { flex: 1; font-weight: 700; font-size: 16px; }
+#cal-title { flex: 1; min-width: 0; font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-head .icon-btn { width: 32px; flex: none; }
+.cal-head .text-btn { flex: none; white-space: nowrap; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 4px; text-align: center; }
 .cal-grid .wd { font-size: 11.5px; color: var(--muted); padding: 2px 0 4px; }
 .day {
@@ -509,6 +511,27 @@ section[data-h="tips"] .tips { margin-top: 0; }
 .day.has.today { box-shadow: 0 0 0 2px var(--side), 0 0 0 3.5px var(--accent); }
 .day.sel:not(.has) { background: var(--sel); }
 .day.sel.has { box-shadow: 0 0 0 2px var(--side), 0 0 0 3.5px var(--text); }
+/* Google Calendar events: small dots under the day number, and the chosen day's list. */
+.day { position: relative; }
+.ev-dots { position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%); display: flex; gap: 2px; pointer-events: none; }
+.ev-dots i { width: 4px; height: 4px; border-radius: 50%; box-shadow: 0 0 0 1px var(--side); }
+.day.has .ev-dots i { box-shadow: 0 0 0 1px var(--on-accent); }
+#cal-gcal { color: var(--muted); }
+#cal-gcal .gcal-dot { opacity: 0; }
+#cal-gcal.on { color: var(--accent); }
+#cal-gcal.on .gcal-dot { opacity: 1; }
+.cal-events { margin-top: 12px; padding: 10px 10px 6px; border-radius: 10px; background: color-mix(in srgb, var(--sel) 45%, transparent); }
+.cal-events[hidden] { display: none; }
+#diary.locked .cal-events { display: none; }
+.ce-head { font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 0 2px 6px; }
+.ce { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 4px; border-radius: 7px; font-size: 13.5px; color: var(--text); }
+@media (hover: hover) { .ce:hover { background: var(--sel); } }
+.ce i { flex: none; width: 4px; align-self: stretch; min-height: 16px; border-radius: 2px; }
+.ce-t { flex: none; min-width: 58px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ce-n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ce-none { font-size: 13px; color: var(--muted); padding: 2px 2px 6px; }
+.ce-none.err { color: var(--warn); }
+.ce-none .text-btn { font-size: 12.5px; padding: 3px 8px; }
 .diary-list { list-style: none; margin: 14px 0 0; padding: 0; }
 .diary-list li { display: flex; gap: 12px; align-items: center; padding: 9px 10px; border-radius: 8px; cursor: pointer; }
 @media (hover: hover) { .diary-list li[data-id]:hover { background: color-mix(in srgb, var(--sel) 55%, transparent); } }

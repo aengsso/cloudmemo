@@ -4,8 +4,12 @@
 (function () {
   const CLIENT_ID = (window.CLOUDMEMO_CLIENT_ID || "").trim();
   const SCOPE = "https://www.googleapis.com/auth/drive.file";
+  // Asked for only after the user turns the calendar on in the diary (same as Go's CalendarScope).
+  const CAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+  const CAL_API = "https://www.googleapis.com/calendar/v3";
   const K = { memos: "cloudmemo.memos.v1", token: "cloudmemo.token", acct: "cloudmemo.account",
-              state: "cloudmemo.oauthState", silentAt: "cloudmemo.silentAt", connected: "cloudmemo.connected" };
+              state: "cloudmemo.oauthState", silentAt: "cloudmemo.silentAt", connected: "cloudmemo.connected",
+              calWant: "cloudmemo.calWant", calOK: "cloudmemo.calGranted" };
   const FOLDER = "CloudMemo", FOLDER_MIME = "application/vnd.google-apps.folder";
   const API = "https://www.googleapis.com/drive/v3", UPLOAD = "https://www.googleapis.com/upload/drive/v3";
   const FILE_FIELDS = "id,name,modifiedTime,appProperties";
@@ -109,7 +113,7 @@
     ls.set(K.state, state);
     const p = new URLSearchParams({
       client_id: CLIENT_ID, redirect_uri: redirectUri(), response_type: "token",
-      scope: SCOPE, state, include_granted_scopes: "true",
+      scope: ls.get(K.calWant, false) ? SCOPE + " " + CAL_SCOPE : SCOPE, state, include_granted_scopes: "true",
     });
     const hint = ls.get(K.acct, "");
     if (hint) p.set("login_hint", hint);
@@ -129,6 +133,8 @@
     if (h.has("error")) return;
     ls.set(K.token, { access_token: h.get("access_token"), exp: Date.now() + (+h.get("expires_in") || 3600) * 1000 });
     ls.set(K.connected, true);
+    // The user may untick the calendar on Google's screen: keep what was really granted.
+    ls.set(K.calOK, (h.get("scope") || "").split(/\s+/).includes(CAL_SCOPE));
   }
   // Renew an expired token without interaction, at most once per 5 minutes, only when idle.
   function maybeSilentRenew() {
@@ -381,13 +387,58 @@
     login() { startAuth(false); },
     async logout() {
       const t = token();
-      ls.del(K.token); ls.del(K.connected); ls.del(K.acct);
+      ls.del(K.token); ls.del(K.connected); ls.del(K.acct); ls.del(K.calOK); ls.del(K.calWant);
       folderId = ""; lastSync = 0; lastError = ""; accountChecked = false;
       resetSync();
       if (t) fetch("https://oauth2.googleapis.com/revoke?token=" + encodeURIComponent(t), { method: "POST" }).catch(() => {});
     },
     syncNow() { token() ? runSync() : startAuth(false); },
+    // Google Calendar (read only) for the diary; same results as calendar.go.
+    calendar: {
+      async status() { return { granted: !!ls.get(K.calOK, false) && ls.get(K.connected, false), busy: false }; },
+      connect() { ls.set(K.calWant, true); startAuth(false); },
+      events: calendarEvents,
+    },
+    openURL(url) { window.open(url, "_blank", "noopener"); },
   };
+
+  async function calGet(url) {
+    const t = token();
+    if (!t) throw new Error("구글 세션 만료");
+    const res = await fetch(url, { headers: { Authorization: "Bearer " + t } });
+    if (res.ok) return res.json();
+    let e = {};
+    try { e = (await res.json()).error || {}; } catch (x) {}
+    const why = [e.status, ...(e.errors || []).map((r) => r.reason)].join(" ") + " " + (e.message || "");
+    if (res.status === 401) { ls.del(K.token); throw new Error("구글 세션 만료"); }
+    if (/insufficientPermissions|SCOPE_INSUFFICIENT|insufficient authentication scopes/.test(why)) {
+      ls.set(K.calOK, false);
+      throw new Error("캘린더 권한이 없어. 일기 달력의 캘린더 버튼으로 다시 연결해줘");
+    }
+    if (/accessNotConfigured|SERVICE_DISABLED|has not been used|is disabled/.test(why)) throw new Error("구글 캘린더 API가 꺼져 있어 (Cloud 콘솔에서 켜야 해)");
+    throw new Error("캘린더 오류: " + (e.message || res.status));
+  }
+  async function calendarEvents(from, to) {
+    const cals = await calGet(`${CAL_API}/users/me/calendarList?minAccessRole=reader&maxResults=50` +
+      "&fields=items(id,summary,summaryOverride,backgroundColor,selected,primary,hidden)");
+    const out = [];
+    for (const c of cals.items || []) {
+      if (c.hidden || !(c.selected || c.primary)) continue;
+      const q = new URLSearchParams({ timeMin: from, timeMax: to, singleEvents: "true", orderBy: "startTime",
+                                      maxResults: "250", fields: "items(summary,start,end,htmlLink,status)" });
+      const r = await calGet(`${CAL_API}/calendars/${encodeURIComponent(c.id)}/events?${q}`);
+      for (const e of r.items || []) {
+        if (e.status === "cancelled") continue;
+        const allDay = !!(e.start && e.start.date);
+        out.push({
+          title: e.summary || "(제목 없음)", allDay, color: c.backgroundColor || "", calendar: c.summaryOverride || c.summary || "",
+          link: e.htmlLink || "",
+          start: allDay ? e.start.date : (e.start && e.start.dateTime) || "", end: allDay ? e.end.date : (e.end && e.end.dateTime) || "",
+        });
+      }
+    }
+    return out.sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
+  }
 
   // ---------- startup ----------
   consumeRedirect();
