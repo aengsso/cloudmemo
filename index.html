@@ -17,7 +17,7 @@
 <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
 <!--WEB-ONLY-END-->
-<link rel="stylesheet" href="style.css?v=58">
+<link rel="stylesheet" href="style.css?v=62">
 </head>
 <body>
 <div id="app" class="show-list">
@@ -27,8 +27,8 @@
         <button data-tab="memo" role="tab">메모</button><button data-tab="diary" role="tab">일기</button>
       </div>
       <div class="head-btns">
-        <button id="btn-settings" class="icon-btn" title="화면 설정 (테마·색)" aria-label="화면 설정">
-          <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="8" cy="9" r="1.6" fill="currentColor"/><circle cx="12.5" cy="6.8" r="1.6" fill="currentColor"/><circle cx="16.6" cy="9.6" r="1.6" fill="currentColor"/><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.3 0 2-.8 2-1.8 0-1.5-1.4-1.6-1.4-3 0-1 .8-1.7 1.8-1.7h2.2a3.9 3.9 0 0 0 3.9-3.9C20.5 6.6 16.7 3.5 12 3.5z" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linejoin="round"/></svg>
+        <button id="btn-settings" class="icon-btn" title="설정 (테마·날씨·사진)" aria-label="설정">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
         <button id="btn-new" class="icon-btn" title="새 메모 (Ctrl+N)" aria-label="새 메모">
           <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
@@ -188,7 +188,7 @@
 </div>
 <div id="settings" class="overlay" hidden>
   <div class="sheet settings" role="dialog" aria-modal="true" aria-labelledby="set-title">
-    <h2 id="set-title">화면 설정</h2>
+    <h2 id="set-title">설정</h2>
     <div class="set-label">모드</div>
     <div class="seg" id="set-mode" role="radiogroup" aria-label="모드">
       <button data-mode="" role="radio">자동</button><button data-mode="light" role="radio">라이트</button><button data-mode="dark" role="radio">다크</button>
@@ -226,7 +226,7 @@
     </div>
     <div class="al-opts" id="al-opts"></div>
     <div class="al-scroll"><div class="al-page" id="al-page"></div></div>
-    <div class="sheet-btns"><button type="button" class="text-btn primary" id="al-save">이미지로 저장</button></div>
+    <div class="sheet-btns"><button type="button" class="text-btn" id="al-save-gif" hidden>움짤로 저장</button><button type="button" class="text-btn primary" id="al-save">이미지로 저장</button></div>
   </div>
 </div>
 <div id="help" class="overlay" hidden>
@@ -330,7 +330,7 @@
           <li><b>비밀 폴더</b>와 잠긴 일기는 암호화돼. 비밀번호를 잊으면 되살릴 수 없어.</li>
           <li>목록을 숨겨도 위쪽 <b>폴더 버튼</b>으로 다른 메모를 열 수 있어.</li>
           <li>PC 앱에서 <kbd>Ctrl + R</kbd>을 누르면 바로 동기화돼.</li>
-          <li>PC 앱은 켤 때 인터넷이 되면 <b>새 버전</b>을 알아서 받아. 버전은 화면 설정에서 보여.</li>
+          <li>PC 앱은 켤 때 인터넷이 되면 <b>새 버전</b>을 알아서 받아. 버전은 설정(톱니바퀴)에서 보여.</li>
         </ul>
       </section>
     </div>
@@ -350,9 +350,9 @@
   </form>
 </div>
 <!--WEB-ONLY-START-->
-<script src="config.js?v=58"></script>
-<script src="api-web.js?v=58"></script>
+<script src="config.js?v=62"></script>
+<script src="api-web.js?v=62"></script>
 <!--WEB-ONLY-END-->
-<script src="app.js?v=58"></script>
+<script src="app.js?v=62"></script>
 </body>
 </html>

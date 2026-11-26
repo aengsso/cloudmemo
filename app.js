@@ -1266,9 +1266,10 @@
   }
   const loadImage = (url) => new Promise((ok, fail) => { const im = new Image(); im.onload = () => ok(im); im.onerror = fail; im.src = url; });
   function canvasOf(w, h) { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }
-  function coverDraw(g, img, w, h) { // fill w×h, cropping the middle
-    const s = Math.max(w / img.naturalWidth, h / img.naturalHeight);
-    const dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+  function coverDraw(g, img, w, h) { // fill w×h, cropping the middle (an image or a canvas)
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    const s = Math.max(w / iw, h / ih);
+    const dw = iw * s, dh = ih * s;
     g.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
   }
   function smallPixels(img, w, h) {
@@ -1309,7 +1310,8 @@
     return best;
   }
   // Thumbnail for one photo with the chosen filter.
-  function stampCanvas(img, filter, pal) {
+  // memo (optional, per animated photo): keeps the pixel-art colors of its first frame for the rest.
+  function stampCanvas(img, filter, pal, memo) {
     const out = canvasOf(TW, TH), g = out.getContext("2d");
     if (filter === "pixel") { // pixel art: strong color, then only 16 colors picked from this photo
       const w = 32, h = 38, d = smallPixels(img, w, h), px = [];
@@ -1320,7 +1322,8 @@
         d.data[i] = p[0]; d.data[i + 1] = p[1]; d.data[i + 2] = p[2];
         px.push(p);
       }
-      const own = kmeans(px, 16);
+      const own = (memo && memo.own) || kmeans(px, 16);
+      if (memo) memo.own = own;
       for (let i = 0; i < d.data.length; i += 4) {
         const c = own[nearestIdx(own, [d.data[i], d.data[i + 1], d.data[i + 2]])];
         d.data[i] = c[0]; d.data[i + 1] = c[1]; d.data[i + 2] = c[2];
@@ -1397,19 +1400,49 @@
     page.innerHTML = headerHTML(y, mo, covers.size) + `<div class="al-grid">` + list.map((s) =>
       `<button type="button" class="stp${s.id ? "" : " none"}${s.dow === 0 ? " sun" : s.dow === 6 ? " sat" : ""}" data-day="${s.key}" title="${s.key} 일기 열기"><span class="ph"></span><b>${s.d}</b></button>`).join("") + `</div>`;
     // Load the photos, then draw them all with one palette.
-    const imgs = new Map();
+    const imgs = new Map(), gifs = new Map();
     await Promise.all(list.filter((s) => s.id).map(async (s) => {
-      try { const u = await photoSrc(s.id); if (u) imgs.set(s.id, await loadImage(u)); } catch (e) {}
+      try {
+        const u = await photoSrc(s.id);
+        if (!u) return;
+        imgs.set(s.id, await loadImage(u));
+        const buf = await (await fetch(u)).arrayBuffer();
+        if (isGif(buf)) gifs.set(s.id, buf);
+      } catch (e) {}
     }));
     if (run !== albumRun) return;
     const pal = album.filter === "halftone" || album.filter === "pastel" ? monthPalette([...imgs.values()], 10) : null;
+    // Animated covers: every frame through the same filter (fewer frames each when there are many).
+    const anims = new Map(), perGif = Math.max(6, Math.min(36, Math.floor(360 / Math.max(1, gifs.size))));
+    for (const [id, buf] of gifs) {
+      const frames = [], delays = [], memo = {};
+      try { gifFrames(buf, perGif, (cv, delay) => { frames.push(stampCanvas(cv, album.filter, pal, memo)); delays.push(delay); }); } catch (e) {}
+      if (frames.length > 1) anims.set(id, { frames, delays });
+      await new Promise((r) => setTimeout(r)); // let the screen breathe between GIFs
+      if (run !== albumRun) return;
+    }
     for (const s of list) {
       const im = s.id && imgs.get(s.id), slot = page.querySelector(`[data-day="${s.key}"] .ph`);
       if (!slot) continue;
-      if (im) slot.replaceChildren(stampCanvas(im, album.filter, pal));
+      const a = s.id && anims.get(s.id);
+      if (a) { const cv = canvasOf(TW, TH); cv.getContext("2d").drawImage(a.frames[0], 0, 0); slot.replaceChildren(cv); playStamp(cv, a, run); }
+      else if (im) slot.replaceChildren(stampCanvas(im, album.filter, pal));
       else if (s.id) slot.parentElement.classList.add("missing");
     }
-    albumStamps = { y, mo, list, imgs, pal, days: covers.size };
+    albumStamps = { y, mo, list, imgs, pal, anims, days: covers.size };
+    $("al-save-gif").hidden = !anims.size;
+  }
+  // A stamp from a GIF keeps moving while the album is open.
+  function playStamp(cv, a, run) {
+    let i = 0;
+    const tick = () => {
+      if (run !== albumRun || $("album").hidden) return;
+      i = (i + 1) % a.frames.length;
+      const g = cv.getContext("2d");
+      g.clearRect(0, 0, TW, TH); g.drawImage(a.frames[i], 0, 0);
+      setTimeout(tick, a.delays[i]);
+    };
+    setTimeout(tick, a.delays[0]);
   }
   let albumStamps = null;
   function openAlbum() {
@@ -1435,6 +1468,11 @@
     return x1 < 0 ? { x: 0, w: 0 } : { x: x0, w: x1 - x0 + 1 };
   }
   async function albumPNG() {
+    const r = await albumCanvas();
+    return r && new Promise((ok) => r.c.toBlob(ok, "image/png"));
+  }
+  // The page on a canvas, plus where each stamp went (for the animated version).
+  async function albumCanvas() {
     const st = albumStamps;
     if (!st) return null;
     const n = st.list.length, few = n > 0 && n <= ALBUM_FEW; // a handful of photos: one centered row, page sized to fit
@@ -1451,20 +1489,79 @@
     const gridW = cols * sw + (cols - 1) * gap;
     const contentW = few ? Math.max(gridW, hb.w, 560) : 5 * sw + 4 * gap;
     const W = mx * 2 + contentW, H = top + rows * (sh + gap + (album.shape === "polaroid" ? 28 : 0)) - gap + bottom;
-    const c = canvasOf(W, H), g = c.getContext("2d");
-    g.fillStyle = album.bg === "theme" ? css.getPropertyValue("--bg").trim() || "#f6f5f2" : "#ffffff";
+    const c = canvasOf(W, H), g = c.getContext("2d", { willReadFrequently: true });
+    const bg = album.bg === "theme" ? css.getPropertyValue("--bg").trim() || "#f6f5f2" : "#ffffff";
+    g.fillStyle = bg;
     g.fillRect(0, 0, W, H);
     g.drawImage(hc, few ? Math.round((W - hb.w) / 2) - hb.x : mx, 0);
-    const gx = few ? Math.round((W - gridW) / 2) : mx;
+    const gx = few ? Math.round((W - gridW) / 2) : mx, slots = [];
     st.list.forEach((s, i) => {
       const cx = gx + (i % cols) * (sw + gap), cy = top + Math.floor(i / cols) * (sh + gap + (album.shape === "polaroid" ? 28 : 0));
-      const im = s.id && st.imgs.get(s.id);
-      drawStamp(g, cx, cy, sw, sh, im ? stampCanvas(im, album.filter, st.pal) : null, s.d, ink, s.dow);
+      const im = s.id && st.imgs.get(s.id), a = s.id && st.anims && st.anims.get(s.id);
+      drawStamp(g, cx, cy, sw, sh, a ? a.frames[0] : im ? stampCanvas(im, album.filter, st.pal) : null, s.d, ink, s.dow);
+      if (a) slots.push({ s, a, cx, cy });
     });
     g.fillStyle = ink; g.globalAlpha = 0.45; g.font = "400 20px " + css.getPropertyValue("--font");
     g.textAlign = few ? "center" : "left";
     g.fillText("클라우드 메모", few ? W / 2 : mx, H - 40); g.globalAlpha = 1; g.textAlign = "left";
-    return new Promise((ok) => c.toBlob(ok, "image/png"));
+    return { c, g, W, H, bg, ink, sw, sh, slots };
+  }
+  // "움짤로 저장": the same page as an animated GIF. Stamps from GIFs move on one shared clock
+  // (at most 4 s, then it loops); everything else is drawn once.
+  async function albumGIF() {
+    const r = await albumCanvas();
+    if (!r) return null;
+    const { c, g, W, H, bg, ink, sw, sh, slots } = r;
+    if (!slots.length) return new Promise((ok) => c.toBlob(ok, "image/png"));
+    const dur = (a) => a.delays.reduce((x, y) => x + y, 0);
+    let step = Math.max(40, Math.min(100, ...slots.flatMap((x) => x.a.delays)));
+    const total = Math.min(4000, Math.max(...slots.map((x) => dur(x.a))));
+    if (total / step > 60) step = Math.ceil(total / 60);
+    const nF = Math.max(2, Math.round(total / step));
+    const frameAt = (a, t) => { t %= dur(a); for (let i = 0; i < a.delays.length; i++) { if (t < a.delays[i]) return i; t -= a.delays[i]; } return 0; };
+    const boxH = album.shape === "circle" ? sw : album.shape === "polaroid" ? sh + 28 : sh, M = 16;
+    const redraw = (x, k) => { // clear the stamp's spot (and its shadow), draw frame k
+      g.fillStyle = bg; g.fillRect(x.cx - M, x.cy - M, sw + 2 * M, boxH + 2 * M);
+      drawStamp(g, x.cx, x.cy, sw, sh, x.a.frames[k], x.s.d, ink, x.s.dow);
+    };
+    // One palette for the whole animation: the page plus every frame of the moving stamps.
+    const sample = [];
+    const addPixels = (d, every) => { for (let i = 0; i < d.length; i += 4 * every) sample.push([d[i], d[i + 1], d[i + 2]]); };
+    addPixels(g.getImageData(0, 0, W, H).data, Math.max(1, Math.floor((W * H) / 60000)));
+    for (const x of slots) for (const f of x.a.frames) addPixels(f.getContext("2d").getImageData(0, 0, f.width, f.height).data, 23);
+    // Colors that cover much of the page (background, paper, ink) go in as they are; the rest by median cut.
+    const freq = new Map();
+    for (const p of sample) { const k = (p[0] << 16) | (p[1] << 8) | p[2]; freq.set(k, (freq.get(k) || 0) + 1); }
+    const fixed = [...freq].filter(([, n]) => n > sample.length * 0.003).sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k]) => k);
+    const fixedSet = new Set(fixed), rest = sample.filter((p) => !fixedSet.has((p[0] << 16) | (p[1] << 8) | p[2]));
+    const pal = [...fixed.map((k) => [k >> 16, (k >> 8) & 255, k & 255]), ...medianCut(rest, 255 - fixed.length)].slice(0, 255);
+    const toIdx = paletteMapper(pal, album.filter === "orig" ? 18 : 0, new Map(fixed.map((k, i) => [k, i]))); // photos: dither
+    const frames = [], prev = new Uint8Array(W * H);
+    const first = toIdx(g.getImageData(0, 0, W, H).data, W);
+    prev.set(first);
+    frames.push({ x: 0, y: 0, w: W, h: H, idx: first, delay: step });
+    const shown = slots.map(() => 0);
+    for (let f = 1; f < nF; f++) {
+      const t = f * step;
+      let x0 = W, y0 = H, x1 = 0, y1 = 0;
+      slots.forEach((x, i) => {
+        const k = frameAt(x.a, t);
+        if (k === shown[i]) return;
+        shown[i] = k; redraw(x, k);
+        x0 = Math.min(x0, x.cx - M); y0 = Math.min(y0, x.cy - M); x1 = Math.max(x1, x.cx + sw + M); y1 = Math.max(y1, x.cy + boxH + M);
+      });
+      if (x1 <= x0) { frames[frames.length - 1].delay += step; continue; } // nothing moved
+      x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(W, x1); y1 = Math.min(H, y1);
+      const w = x1 - x0, h = y1 - y0, idx = toIdx(g.getImageData(x0, y0, w, h).data, w, x0, y0);
+      for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) { // unchanged pixels: transparent (smaller file)
+        const j = yy * w + xx, o = (y0 + yy) * W + x0 + xx;
+        if (idx[j] === prev[o]) idx[j] = 255; else prev[o] = idx[j];
+      }
+      frames.push({ x: x0, y: y0, w, h, idx, delay: step });
+      if (f % 4 === 0) await new Promise((res) => setTimeout(res));
+    }
+    // back to the first picture at the loop's end: the stamps' first frames are already on frame 0
+    return new Blob([gifEncode(W, H, pal, frames)], { type: "image/gif" });
   }
   // One stamp on the export canvas. The frame's outer box is w×h (circle: w×w; polaroid: + a
   // 28px caption strip); the photo fills the inner box, cropped to fit.
@@ -1519,14 +1616,15 @@
     g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
     g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
   }
-  async function saveAlbum() {
-    const btn = $("al-save");
+  async function saveAlbum(gif) {
+    const btn = $(gif ? "al-save-gif" : "al-save"), label = btn.textContent;
     btn.disabled = true; btn.textContent = "만드는 중…";
     try {
-      const blob = await albumPNG();
+      const blob = gif ? await albumGIF() : await albumPNG();
       if (!blob) return;
-      const name = `이달의 사진 ${albumStamps.y}-${pad(albumStamps.mo + 1)}.png`;
-      const file = new File([blob], name, { type: "image/png" });
+      const ext = blob.type === "image/gif" ? "gif" : "png";
+      const name = `이달의 사진 ${albumStamps.y}-${pad(albumStamps.mo + 1)}.${ext}`;
+      const file = new File([blob], name, { type: blob.type });
       if (/iPhone|iPad|Android/i.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: name }).catch(() => {});
       } else {
@@ -1536,7 +1634,187 @@
         flashMeta("이미지를 저장했어 (다운로드 폴더)");
       }
     } catch (e) { alert("이미지를 만들지 못했어: " + ((e && e.message) || e)); }
-    finally { btn.disabled = false; btn.textContent = "이미지로 저장"; }
+    finally { btn.disabled = false; btn.textContent = label; }
+  }
+
+  // ---------- GIF: read (for animated photos) and write (for the animated album) ----------
+  const isGif = (buf) => { const b = new Uint8Array(buf, 0, Math.min(6, buf.byteLength)); return b.length === 6 && b[0] === 71 && b[1] === 73 && b[2] === 70 && b[3] === 56; };
+  // Blocks of a GIF file: size, global colors, and each frame's still-compressed data.
+  function parseGif(buf) {
+    const b = new Uint8Array(buf);
+    if (!isGif(buf) || b.length < 13) return null;
+    const W = b[6] | (b[7] << 8), H = b[8] | (b[9] << 8), f = b[10];
+    let p = 13, gct = null;
+    if (f & 0x80) { const n = 2 << (f & 7); gct = b.subarray(p, p + n * 3); p += n * 3; }
+    const frames = [];
+    let gce = { disp: 0, delay: 0, tr: -1 };
+    const skipBlocks = () => { while (p < b.length && b[p]) p += b[p] + 1; p++; };
+    while (p < b.length) {
+      const t = b[p++];
+      if (t === 0x3B) break;
+      if (t === 0x21) {
+        const label = b[p++];
+        if (label === 0xF9 && b[p] >= 4) { const pf = b[p + 1]; gce = { disp: (pf >> 2) & 7, delay: b[p + 2] | (b[p + 3] << 8), tr: pf & 1 ? b[p + 4] : -1 }; }
+        skipBlocks();
+      } else if (t === 0x2C) {
+        const x = b[p] | (b[p + 1] << 8), y = b[p + 2] | (b[p + 3] << 8), w = b[p + 4] | (b[p + 5] << 8), h = b[p + 6] | (b[p + 7] << 8), ff = b[p + 8];
+        p += 9;
+        let lct = null;
+        if (ff & 0x80) { const n = 2 << (ff & 7); lct = b.subarray(p, p + n * 3); p += n * 3; }
+        const minSize = b[p++];
+        let len = 0;
+        for (let q = p; q < b.length && b[q]; q += b[q] + 1) len += b[q];
+        const data = new Uint8Array(len);
+        for (let o = 0; p < b.length && b[p]; p += b[p] + 1) { data.set(b.subarray(p + 1, p + 1 + b[p]), o); o += b[p]; }
+        p++;
+        frames.push({ x, y, w, h, interlace: !!(ff & 0x40), pal: lct || gct, minSize, data, ...gce });
+        gce = { disp: 0, delay: 0, tr: -1 };
+      } else break;
+    }
+    return { W, H, frames };
+  }
+  function lzwDecode(minSize, data, npix) {
+    const out = new Uint8Array(npix), clear = 1 << minSize, eoi = clear + 1;
+    const prefix = new Uint16Array(4096), suffix = new Uint8Array(4096), stack = new Uint8Array(4097);
+    for (let i = 0; i < clear; i++) suffix[i] = i;
+    let size = minSize + 1, mask = (1 << size) - 1, next = eoi + 1, acc = 0, bits = 0, p = 0, op = 0, old = -1, first = 0;
+    while (op < npix) {
+      while (bits < size) { if (p >= data.length) return out; acc |= data[p++] << bits; bits += 8; }
+      const code = acc & mask;
+      acc >>>= size; bits -= size;
+      if (code === clear) { size = minSize + 1; mask = (1 << size) - 1; next = eoi + 1; old = -1; continue; }
+      if (code === eoi) break;
+      if (old === -1) { if (code > clear) break; out[op++] = suffix[code]; old = first = code; continue; }
+      let top = 0, c = code;
+      if (code >= next) { stack[top++] = first; c = old; }
+      while (c > eoi) { stack[top++] = suffix[c]; c = prefix[c]; }
+      first = suffix[c]; stack[top++] = first;
+      while (top && op < npix) out[op++] = stack[--top];
+      if (next < 4096) { prefix[next] = old; suffix[next] = first; next++; if ((next & mask) === 0 && next < 4096) { size++; mask = (1 << size) - 1; } }
+      old = code;
+    }
+    return out;
+  }
+  // Calls onFrame(canvas W×H on white, delay ms) for up to `max` evenly picked frames (delays of
+  // skipped frames are added to the shown ones). Frames are drawn over each other as a browser does.
+  function gifFrames(buf, max, onFrame) {
+    const gif = parseGif(buf);
+    if (!gif || gif.frames.length < 2 || gif.W * gif.H > 4e6 || !gif.W || !gif.H) return 0;
+    const { W, H, frames } = gif, n = frames.length, step = Math.ceil(n / max);
+    const cur = new Uint8ClampedArray(W * H * 4), tmp = canvasOf(W, H), out = canvasOf(W, H);
+    const tg = tmp.getContext("2d"), og = out.getContext("2d");
+    let acc = 0, shown = 0;
+    for (let i = 0; i < n; i++) {
+      const f = frames[i], saved = f.disp === 3 ? cur.slice() : null;
+      const px = lzwDecode(f.minSize, f.data, f.w * f.h), pal = f.pal;
+      if (pal) {
+        const rows = f.interlace ? [[0, 8], [4, 8], [2, 4], [1, 2]].flatMap(([s0, d]) => { const r = []; for (let y = s0; y < f.h; y += d) r.push(y); return r; }) : null;
+        for (let r = 0; r < f.h; r++) {
+          const yy = f.y + (rows ? rows[r] : r);
+          if (yy >= H) continue;
+          for (let c = 0; c < f.w; c++) {
+            const xx = f.x + c, k = px[r * f.w + c];
+            if (xx >= W || k === f.tr || k * 3 + 2 >= pal.length) continue;
+            const o = (yy * W + xx) * 4;
+            cur[o] = pal[k * 3]; cur[o + 1] = pal[k * 3 + 1]; cur[o + 2] = pal[k * 3 + 2]; cur[o + 3] = 255;
+          }
+        }
+      }
+      acc += (f.delay < 2 ? 10 : f.delay) * 10; // 0/1 means "as fast as it goes": browsers use 100 ms
+      if (i % step === step - 1 || i === n - 1) {
+        tg.putImageData(new ImageData(cur, W, H), 0, 0);
+        og.fillStyle = "#fff"; og.fillRect(0, 0, W, H); og.drawImage(tmp, 0, 0);
+        onFrame(out, acc); acc = 0; shown++;
+      }
+      if (f.disp === 2) for (let yy = f.y; yy < Math.min(H, f.y + f.h); yy++) cur.fill(0, (yy * W + f.x) * 4, (yy * W + Math.min(W, f.x + f.w)) * 4);
+      else if (saved) cur.set(saved);
+    }
+    return shown;
+  }
+  // k colors for a list of [r,g,b] by median cut (split the box with the widest spread).
+  function medianCut(px, k) {
+    const box = (list) => {
+      const lo = [255, 255, 255], hi = [0, 0, 0];
+      for (const p of list) for (let c = 0; c < 3; c++) { if (p[c] < lo[c]) lo[c] = p[c]; if (p[c] > hi[c]) hi[c] = p[c]; }
+      const r = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]], ch = r.indexOf(Math.max(...r));
+      return { list, ch, score: r[ch] * Math.sqrt(list.length) };
+    };
+    const boxes = [box(px.length ? px : [[0, 0, 0]])];
+    while (boxes.length < k) {
+      let bi = -1;
+      boxes.forEach((b, i) => { if (b.list.length > 1 && b.score > 0 && (bi < 0 || b.score > boxes[bi].score)) bi = i; });
+      if (bi < 0) break;
+      const b = boxes[bi], ch = b.ch;
+      b.list.sort((u, v) => u[ch] - v[ch]);
+      const mid = b.list.length >> 1;
+      boxes.splice(bi, 1, box(b.list.slice(0, mid)), box(b.list.slice(mid)));
+    }
+    return boxes.map((b) => {
+      const s = [0, 0, 0];
+      for (const p of b.list) { s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; }
+      return s.map((v) => Math.round(v / b.list.length));
+    });
+  }
+  // RGBA pixels of a w-wide region at (x0, y0) → palette indices (nearest color, cached per 5-bit
+  // color). dither > 0 adds a fixed 4×4 pattern (by page position, so still parts stay the same
+  // from frame to frame) that hides banding in smooth photos.
+  const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  function paletteMapper(pal, dither = 0, exact = new Map()) {
+    const cache = new Int16Array(32768).fill(-1);
+    return (d, w, x0 = 0, y0 = 0) => {
+      const out = new Uint8Array(d.length >> 2);
+      for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+        let r = d[i], g = d[i + 1], b = d[i + 2];
+        const ex = exact.get((r << 16) | (g << 8) | b); // flat page colors stay exact (no dots)
+        if (ex !== undefined) { out[j] = ex; continue; }
+        if (dither) {
+          const x = x0 + (j % w), y = y0 + ((j / w) | 0), o = (BAYER4[(y & 3) * 4 + (x & 3)] / 16 - 0.47) * dither;
+          r = Math.max(0, Math.min(255, r + o)); g = Math.max(0, Math.min(255, g + o)); b = Math.max(0, Math.min(255, b + o));
+        }
+        const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+        let k = cache[key];
+        if (k < 0) { k = nearestIdx(pal, [(r & 248) + 4, (g & 248) + 4, (b & 248) + 4]); cache[key] = k; }
+        out[j] = k;
+      }
+      return out;
+    };
+  }
+  function lzwEncode(minSize, idx) {
+    const out = [], clear = 1 << minSize, eoi = clear + 1, dict = new Map();
+    let size = minSize + 1, next = eoi + 1, acc = 0, bits = 0;
+    const emit = (code) => { acc |= code << bits; bits += size; while (bits >= 8) { out.push(acc & 255); acc >>>= 8; bits -= 8; } };
+    emit(clear);
+    let cur = idx[0];
+    for (let i = 1; i < idx.length; i++) {
+      const k = idx[i], key = (cur << 8) | k, hit = dict.get(key);
+      if (hit !== undefined) { cur = hit; continue; }
+      emit(cur);
+      if (next === 4096) { emit(clear); dict.clear(); next = eoi + 1; size = minSize + 1; }
+      else { if (next >= 1 << size) size++; dict.set(key, next++); }
+      cur = k;
+    }
+    emit(cur); emit(eoi);
+    if (bits > 0) out.push(acc & 255);
+    return out;
+  }
+  // frames: [{ x, y, w, h, idx (palette indices, 255 = see-through), delay ms }], looping forever.
+  function gifEncode(W, H, pal, frames) {
+    let buf = new Uint8Array(1 << 20), n = 0;
+    const put = (...v) => { if (n + v.length > buf.length) { const nb = new Uint8Array(Math.max(buf.length * 2, n + v.length)); nb.set(buf); buf = nb; } for (const x of v) buf[n++] = x; };
+    const str = (t) => put(...[...t].map((ch) => ch.charCodeAt(0)));
+    const u16 = (v) => put(v & 255, (v >> 8) & 255);
+    str("GIF89a"); u16(W); u16(H); put(0xF7, 0, 0);
+    for (let i = 0; i < 256; i++) { const c = pal[i] || [0, 0, 0]; put(c[0], c[1], c[2]); }
+    put(0x21, 0xFF, 11); str("NETSCAPE2.0"); put(3, 1, 0, 0, 0);
+    for (const f of frames) {
+      put(0x21, 0xF9, 4, (1 << 2) | 1); u16(Math.max(2, Math.round(f.delay / 10))); put(255, 0);
+      put(0x2C); u16(f.x); u16(f.y); u16(f.w); u16(f.h); put(0, 8);
+      const data = lzwEncode(8, f.idx);
+      for (let i = 0; i < data.length; i += 255) { const len = Math.min(255, data.length - i); put(len); for (let j = 0; j < len; j++) put(data[i + j]); }
+      put(0);
+    }
+    put(0x3B);
+    return buf.subarray(0, n);
   }
 
   // ---------- 📅 add a line to Google Calendar (Google's own "new event" page, no permission needed) ----------
@@ -2454,6 +2732,17 @@
     if (!blob) throw new Error("사진을 줄이지 못했어");
     return blob;
   }
+  // Animated GIFs (up to 8 MB) are kept as they are, so they move; shrinking keeps only one picture.
+  const GIF_MAX = 8 << 20;
+  async function photoForMemo(f) {
+    if (f.type === "image/gif") {
+      if (f.size <= GIF_MAX) {
+        const g = parseGif(await f.arrayBuffer());
+        if (g && g.frames.length > 1) return new Blob([f], { type: "image/gif" });
+      } else flashMeta("움짤이 8MB보다 커서 멈춘 사진으로 넣었어");
+    }
+    return shrinkPhoto(f);
+  }
   function photoBlocked() {
     const m = memos.find((x) => x.id === currentId);
     if (!m) return "메모를 먼저 열어 줘";
@@ -2476,7 +2765,7 @@
     for (const f of files) {
       let blob, id;
       try {
-        blob = await shrinkPhoto(f);
+        blob = await photoForMemo(f);
         id = newPhotoId();
         await api.putImage(id, lock ? await sealPhoto(blob) : blob);
       } catch (e) { alert("사진을 넣지 못했어: " + ((e && e.message) || e)); continue; }
@@ -3435,7 +3724,8 @@
   $("cal-album").hidden = !canPhoto();
   $("cal-album").onclick = openAlbum;
   $("al-close").onclick = closeAlbum;
-  $("al-save").onclick = saveAlbum;
+  $("al-save").onclick = () => saveAlbum(false);
+  $("al-save-gif").onclick = () => saveAlbum(true);
   $("al-prev").onclick = () => { albumMonth = new Date(albumMonth.getFullYear(), albumMonth.getMonth() - 1, 1); renderAlbum(); };
   $("al-next").onclick = () => { albumMonth = new Date(albumMonth.getFullYear(), albumMonth.getMonth() + 1, 1); renderAlbum(); };
   $("album").addEventListener("click", (e) => {
