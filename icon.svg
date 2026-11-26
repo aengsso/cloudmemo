@@ -1,6 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#e0a23a"/>
-  <rect x="112" y="96" width="288" height="336" rx="36" fill="#fffaf0"/>
-  <path d="M164 186h184M164 246h184M164 306h120" stroke="#c8861a" stroke-width="26" stroke-linecap="round"/>
-  <path d="M300 404c-34 0-58-22-58-50 0-26 20-46 46-48 8-28 32-46 62-46 36 0 64 26 66 60 22 4 38 22 38 42 0 24-20 42-46 42z" fill="#3b82c4" stroke="#fffaf0" stroke-width="14"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <pattern id="air" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="14" height="14" fill="#f1f4f9"/>
+      <rect width="4.5" height="14" fill="#c8372d"/>
+      <rect x="7" width="4.5" height="14" fill="#24489a"/>
+    </pattern>
+  </defs>
+  <rect width="64" height="64" rx="12" fill="url(#air)"/>
+  <rect x="6" y="6" width="52" height="52" rx="6" fill="#f1f4f9"/>
+  <g transform="rotate(-7 32 32)">
+    <rect x="17" y="13" width="30" height="38" fill="#fff"/>
+    <rect x="20" y="16" width="24" height="32" fill="#24489a"/>
+    <text x="32" y="39" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="22" fill="#fff">K</text>
+  </g>
 </svg>

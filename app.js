@@ -891,7 +891,7 @@
     const st = await c.status();
     if (st && st.granted) { cal.granted = true; calLoad(true); return; }
     if (!confirm("구글 캘린더 일정을 일기 달력에 같이 보여줄까?\n\n구글 로그인 화면이 열리면 '캘린더 보기' 권한을 허용해 줘. " +
-                 "'확인되지 않은 앱' 화면이 나오면 고급 → CloudMemo(으)로 이동을 누르면 돼.\n일정은 읽기만 하고 바꾸지 않아.")) {
+                 "'확인되지 않은 앱' 화면이 나오면 고급 → Keepsake(또는 CloudMemo)(으)로 이동을 누르면 돼.\n일정은 읽기만 하고 바꾸지 않아.")) {
       cal.on = false; lsSet(CAL_ON_KEY, false); renderDiary(); return;
     }
     await flush();
@@ -1858,7 +1858,7 @@
     });
     g.fillStyle = ink; g.globalAlpha = 0.45; g.font = "400 20px " + css.getPropertyValue("--font");
     g.textAlign = few ? "center" : "left";
-    g.fillText("클라우드 메모", few ? W / 2 : mx, H - 40); g.globalAlpha = 1; g.textAlign = "left";
+    g.fillText("Keepsake", few ? W / 2 : mx, H - 40); g.globalAlpha = 1; g.textAlign = "left";
     return { c, g, W, H, bg, ink, sw, sh, slots };
   }
   // 창문 / 티켓 page: pieces of different sizes flow in rows (each row centered); windows get stars in between.
@@ -1898,7 +1898,7 @@
     }
     g.fillStyle = ink; g.globalAlpha = 0.45; g.font = "400 20px " + css.getPropertyValue("--font");
     g.textAlign = few ? "center" : "left";
-    g.fillText("클라우드 메모", few ? W / 2 : mx, H - 40); g.globalAlpha = 1; g.textAlign = "left";
+    g.fillText("Keepsake", few ? W / 2 : mx, H - 40); g.globalAlpha = 1; g.textAlign = "left";
     return { c, g, W, H, bg, ink, sw: 200, sh: 240, slots, sparks };
   }
   // "움짤로 저장": the same page as an animated GIF. Stamps from GIFs move on one shared clock
@@ -2398,7 +2398,7 @@
     if (chipEl) text = text.replace(chipEl.textContent, " ");
     let titleText = text.replace(ZW, "").replace(BOX_RE, "").replace(/\s+/g, " ").trim() || title(textOf(m));
     if (!when.date && m.diary) when.date = m.diary; // a diary line is about that day
-    const url = calendarURL(titleText, when, `클라우드 메모 "${title(textOf(m))}"에서`);
+    const url = calendarURL(titleText, when, `Keepsake "${title(textOf(m))}"에서`);
     openExternal(url);
     flashMeta(when.date ? "구글 캘린더에서 저장을 눌러 줘" : "날짜를 고르고 저장을 눌러 줘");
   }
@@ -3171,7 +3171,7 @@
   // that no memo uses (and older than 3 days, so nothing still on its way is touched) to the trash.
   async function cleanPhotos() {
     const note = $("ph-clean-note"), btn = $("ph-clean"), say = (t) => { note.textContent = t; };
-    if (typeof api.listImages !== "function") { say("이 PC 앱에서는 아직 못 해. CloudMemo.exe를 새로 받아 줘."); return; }
+    if (typeof api.listImages !== "function") { say("이 PC 앱에서는 아직 못 해. PC 앱을 새로 받아 줘."); return; }
     const st = await api.status();
     if (!st.loggedIn) { say("구글 드라이브에 연결된 상태에서만 정리할 수 있어."); return; }
     if (memos.some((m) => isLocked(m.body)) && !(await unlockVault())) return;
@@ -3270,7 +3270,7 @@
     const m = memos.find((x) => x.id === currentId);
     if (!m) return "메모를 먼저 열어 줘";
     if (photoNeedsLock(m)) {
-      if (!api.lockedPhotos) return "이 PC 앱은 잠긴 메모에 사진을 넣을 수 없어. CloudMemo.exe를 새로 받아 줘.";
+      if (!api.lockedPhotos) return "이 PC 앱은 잠긴 메모에 사진을 넣을 수 없어. PC 앱을 새로 받아 줘.";
       if (!vault) return "먼저 잠금을 풀어 줘";
     }
     return "";
@@ -3424,7 +3424,7 @@
   const LOOK_KEY = "cloudmemo.look";
   // h/t: background hue/tint, a: accent for the preview card (CSS has the real values).
   const THEMES = [
-    { id: "", n: "클래식", h: 45, t: 17, a: "hsl(37 77% 44%)" },
+    { id: "", n: "에어메일", h: 216, t: 34, a: "hsl(222 62% 38%)" },
     { id: "mint", n: "민트", h: 160, t: 20, a: "hsl(168 62% 34%)" },
     { id: "lavender", n: "라벤더", h: 255, t: 24, a: "hsl(258 52% 52%)" },
     { id: "ocean", n: "오션", h: 210, t: 24, a: "hsl(212 78% 44%)" },
@@ -3652,7 +3652,7 @@
     if (!w) { alert("발표 화면 창이 막혔어. 주소창 오른쪽의 팝업 차단 아이콘에서 허용해줘."); return; }
     const d = w.document;
     d.open();
-    d.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>발표 화면 - 클라우드 메모</title>` +
+    d.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>발표 화면 - Keepsake</title>` +
       `<style>${audienceCSS()}</style></head><body><div id="present" class="audience">` +
       `<div id="present-page" class="present-page"></div><div class="present-bar">` +
       `<span id="present-hint">이 창을 프로젝터 화면으로 옮긴 뒤 F 키나 [전체 화면]을 눌러줘</span>` +

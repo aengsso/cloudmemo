@@ -1,8 +1,10 @@
-/* Theme = background hue/tint (--h, --t) + accent (--ah, --as, lightness --al light / --al-d dark).
+/* Keepsake — an airmail look: thin blue-white letter paper, post-office blue ink, and the red/blue
+   airmail stripe as the one bold mark (top of the sidebar, the icon, the sign-in page).
+   Theme = background hue/tint (--h, --t) + accent (--ah, --as, lightness --al light / --al-d dark).
    Presets set only these numbers (html[data-theme]); a custom accent sets --ah/--as/--al inline.
    Mode: html[data-mode="light"|"dark"], or follows the system when absent. */
 :root {
-  --h: 45; --t: 17; --ah: 37; --as: 77; --al: 44%; --al-d: 58%;
+  --h: 216; --t: 34; --ah: 222; --as: 62; --al: 38%; --al-d: 72%;
   --bg: hsl(var(--h) calc(var(--t) * 1%) 95.5%);
   --panel: hsl(var(--h) calc(var(--t) * .5%) 99.5%);
   --side: hsl(var(--h) calc(var(--t) * 1%) 92.5%);
@@ -21,6 +23,8 @@
   --c-purple: #9c36b5;
   --c-gray: #868e96;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  --serif: "Hahmlet", "Nanum Myeongjo", "AppleMyungjo", "Batang", serif; /* titles: like a handwritten letter's heading, not a notes app */
+  --post-red: #c8372d;
   color-scheme: light;
 }
 :root[data-theme="mint"]     { --h: 160; --t: 20; --ah: 168; --as: 62; --al: 34%; --al-d: 55%; }
@@ -864,3 +868,28 @@ section[data-h="tips"] .tips { margin-top: 0; }
 .al-page.roll .stp { zoom: .82; }
 .al-page.roll .stp + .stp { margin-left: -12px; }
 .al-page.roll .wk-br { flex-basis: 100%; height: 0; }
+
+
+/* ---------- Keepsake ---------- */
+/* The airmail stripe along the top of the sidebar. */
+#sidebar::before {
+  content: ""; flex: none; height: 6px;
+  background: repeating-linear-gradient(135deg, var(--post-red) 0 11px, transparent 11px 17px, var(--accent) 17px 28px, transparent 28px 34px);
+}
+/* Titles set in a serif: the 메모 / 일기 tabs, list titles, the first line of a memo, sheet headings. */
+.title-tabs button { font-family: var(--serif); font-weight: 600; font-size: 21px; letter-spacing: -.01em; }
+#list .t, .diary-list .t { font-family: var(--serif); font-weight: 600; font-size: 15.5px; letter-spacing: -.005em; }
+#cal-title { font-family: var(--serif); font-weight: 600; }
+.sheet h2 { font-family: var(--serif); font-weight: 600; font-size: 19px; }
+.set-group h3 { font-family: var(--serif); letter-spacing: 0; font-size: 14px; }
+.set-brand { font-family: var(--serif); font-weight: 600; }
+#editor > div:first-child:not([data-b]):not(:has(img, [data-wx], time)) {
+  font-family: var(--serif); font-weight: 600; font-size: 1.32em; line-height: 1.35; letter-spacing: -.01em; margin-bottom: .25em;
+}
+#editor.empty > div:first-child::before { font-family: var(--serif); }
+/* The open memo: a sheet of letter paper laid on the list, with a blue ink edge. */
+#list li.active, .diary-list li.active {
+  background: var(--panel);
+  box-shadow: inset 3px 0 0 var(--accent), 0 1px 3px color-mix(in srgb, var(--text) 10%, transparent);
+}
+#list li.active .s em { background: var(--sel); }
