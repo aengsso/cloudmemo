@@ -194,6 +194,7 @@
         if (!IMG_ID.test(id || "")) continue;
         el.setAttribute("data-img", id);
         if (n.getAttribute("data-rep") === "1") el.setAttribute("data-rep", "1"); // the day's cover photo
+        for (const a of ["data-fx", "data-fy"]) { const v = n.getAttribute(a); if (/^(0(\.\d{1,3})?|1(\.0{1,3})?)$/.test(v || "")) el.setAttribute(a, v); } // "중심" (0..1)
         el.alt = "사진";
         dst.appendChild(el);
         continue;
@@ -1244,13 +1245,15 @@
     font: [["basic", "기본"], ["postmark", "우체국 소인"], ["editorial", "영문 이탤릭"], ["bignum", "큰 숫자"], ["typewriter", "타자기"], ["serif", "명조"], ["script", "영문 손글씨"]],
   };
   // Cover photo of a diary body: the one marked data-rep, else the first.
-  function coverOf(body) {
-    if (!body || !isHTML(body)) return "";
+  function coverOf(body) { // { id, fx, fy } or null
+    if (!body || !isHTML(body)) return null;
     const tpl = document.createElement("template");
     tpl.innerHTML = body.slice(HTML_MARKER.length);
     const img = tpl.content.querySelector('img[data-rep="1"]') || tpl.content.querySelector("img[data-img]");
     const id = img && img.getAttribute("data-img");
-    return id && IMG_ID.test(id) ? id : "";
+    if (!id || !IMG_ID.test(id)) return null;
+    const fx = parseFloat(img.getAttribute("data-fx")), fy = parseFloat(img.getAttribute("data-fy"));
+    return { id, fx: isNaN(fx) ? null : fx, fy: isNaN(fy) ? null : fy };
   }
   function monthCovers(y, mo) {
     const prefix = `${y}-${pad(mo + 1)}-`, out = new Map();
@@ -1259,9 +1262,9 @@
       if (!isDiary(m) || !m.diary.startsWith(prefix)) continue;
       const b = bodyOf(m);
       if (b == null) { locked = true; continue; }
-      const id = coverOf(b);
+      const cv = coverOf(b);
       const prev = out.get(m.diary);
-      if (id && (!prev || m.updated > prev.updated)) out.set(m.diary, { id, updated: m.updated });
+      if (cv && (!prev || m.updated > prev.updated)) out.set(m.diary, { ...cv, updated: m.updated });
     }
     return { covers: out, locked };
   }
@@ -1272,13 +1275,17 @@
   const cropCache = new WeakMap();
   function cropBox(img, w, h) {
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
-    const s = Math.max(w / iw, h / ih), cw = w / s, ch = h / s, key = `${Math.round((cw / iw) * 1000)}:${Math.round((ch / ih) * 1000)}`;
+    const s = Math.max(w / iw, h / ih), cw = w / s, ch = h / s, F = img._cmFocus;
+    const key = `${Math.round((cw / iw) * 1000)}:${Math.round((ch / ih) * 1000)}:${F ? F.x + "," + F.y : ""}`;
     let m = cropCache.get(img);
     if (!m) { m = new Map(); cropCache.set(img, m); }
     if (m.has(key)) return m.get(key);
     let sx = (iw - cw) / 2, sy = (ih - ch) / 2;
     const free = iw - cw > 2 ? "x" : ih - ch > 2 ? "y" : "";
-    if (free) {
+    if (F) { // a picked "중심": it goes in the middle of the frame (as far as the picture allows)
+      sx = Math.max(0, Math.min(iw - cw, F.x * iw - cw / 2));
+      sy = Math.max(0, Math.min(ih - ch, F.y * ih - ch / 2));
+    } else if (free) {
       const k = 64 / Math.max(iw, ih), tw = Math.max(8, Math.round(iw * k)), th = Math.max(8, Math.round(ih * k));
       const t = canvasOf(tw, th), tg = t.getContext("2d", { willReadFrequently: true });
       tg.drawImage(img, 0, 0, tw, th);
@@ -1403,15 +1410,17 @@
     for (let y = S / 2; y < h; y += S) for (let x = S / 2; x < w; x += S) { // seeds a little off the grid: uneven pieces
       const j = cs.length, sx = Math.max(0, Math.min(w - 1, x + (rnd(j) - 0.5) * S * 0.7)), sy = Math.max(0, Math.min(h - 1, y + (rnd(j + 99) - 0.5) * S * 0.7));
       const i = ((sy | 0) * w + (sx | 0)) * 4;
-      cs.push([sx, sy, d[i], d[i + 1], d[i + 2]]);
+      cs.push([sx, sy, d[i], d[i + 1], d[i + 2], S]);
     }
+
     let lab = new Int32Array(w * h).fill(0);
-    const dist = new Float32Array(w * h), m2 = 30 * 30, S2 = S * S;
+    const dist = new Float32Array(w * h), m2 = 30 * 30;
     for (let it = 0; it < 6; it++) {
       dist.fill(Infinity);
       cs.forEach((c, ci) => {
-        const x0 = Math.max(0, (c[0] - S) | 0), x1 = Math.min(w - 1, (c[0] + S) | 0);
-        const y0 = Math.max(0, (c[1] - S) | 0), y1 = Math.min(h - 1, (c[1] + S) | 0);
+        const Sc = c[5], S2 = Sc * Sc;
+        const x0 = Math.max(0, (c[0] - Sc) | 0), x1 = Math.min(w - 1, (c[0] + Sc) | 0);
+        const y0 = Math.max(0, (c[1] - Sc) | 0), y1 = Math.min(h - 1, (c[1] + Sc) | 0);
         for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
           const i = y * w + x, o = i * 4;
           const dc = (d[o] - c[2]) ** 2 + (d[o + 1] - c[3]) ** 2 + (d[o + 2] - c[4]) ** 2;
@@ -1421,7 +1430,7 @@
       });
       const sum = cs.map(() => [0, 0, 0, 0, 0, 0]);
       for (let i = 0; i < w * h; i++) { const t = sum[lab[i]], o = i * 4; t[0] += i % w; t[1] += (i / w) | 0; t[2] += d[o]; t[3] += d[o + 1]; t[4] += d[o + 2]; t[5]++; }
-      cs.forEach((c, ci) => { const t = sum[ci]; if (t[5]) for (let j = 0; j < 5; j++) c[j] = t[j] / t[5]; });
+      cs.forEach((c, ci) => { const t = sum[ci]; if (t[5]) for (let j = 0; j < 5; j++) c[j] = t[j] / t[5]; }); // c[5] (its size) stays
     }
     for (let pass = 0; pass < 3; pass++) { // smooth the edges: each cell takes its neighbors' most common piece
       const out = new Int32Array(lab);
@@ -1595,6 +1604,36 @@
     const v = !s.id ? WIN_SIZES[2] : WIN_SIZES[r < 0.42 ? 0 : r < 0.68 ? 1 : r < 0.84 ? 2 : 3];
     return { w: v.w, h: v.h, kind: v.k[Math.floor(hash01(seed + 0.37) * v.k.length)], dy };
   }
+  // 티켓: one size of old paper ticket per day, a little crooked; the photo sits in its window.
+  const TKT = { w: 200, h: 356, pw: 160, ph: 214 }; // a 3:4 photo window, like a phone photo
+  function ticketLay(s, y, mo) {
+    const seed = y * 500 + mo * 40 + s.d;
+    return { w: TKT.w, h: TKT.h, pw: TKT.pw, ph: TKT.ph, kind: 0, dy: Math.round((hash01(seed + 0.71) - 0.5) * 22), tilt: +((hash01(seed + 0.13) - 0.5) * 7).toFixed(1) };
+  }
+  // 한 주씩 이어 붙이기: each week (Sun–Sat) is one roll of tickets in one paper color; only the
+  // roll's two ends have notched corners, and a dashed tear line runs between the tickets.
+  const rollOn = () => album.shape === "ticket" && !!album.roll;
+  let rollInfo = null; // date → { paper, left, right, week }
+  function setRoll(list, y, mo) {
+    rollInfo = null;
+    if (!rollOn()) return;
+    rollInfo = new Map();
+    const first = new Date(y, mo, 1).getDay(), weekOf = (d) => Math.floor((d - 1 + first) / 7);
+    list.forEach((s, i) => {
+      const w = weekOf(s.d), prev = list[i - 1], next = list[i + 1];
+      rollInfo.set(s.key, { week: w, paper: TICKET_PAPERS[Math.floor(hash01(y * 53 + mo * 7 + w * 3.3) * TICKET_PAPERS.length)],
+        left: !prev || weekOf(prev.d) !== w, right: !next || weekOf(next.d) !== w });
+    });
+  }
+  const looseShape = () => album.shape === "window" || album.shape === "ticket";
+  function layOf(s, y, mo) {
+    if (album.shape === "ticket") {
+      const L = ticketLay(s, y, mo), R = rollInfo && rollInfo.get(s.key);
+      return R ? { ...L, dy: 0, tilt: 0, kind: R, week: R.week } : { ...L, kind: null };
+    }
+    const L = winLay(s, y, mo);
+    return { ...L, pw: L.w, ph: L.h, tilt: 0 };
+  }
   // A tap on a window: the next size/frame for that day.
   function nextWindow(s, y, mo) {
     const L = winLay(s, y, mo), i = WIN_VARIANTS.findIndex((v) => v.w === L.w && v.h === L.h && v.kind === L.kind);
@@ -1643,6 +1682,7 @@
         ? `<div class="al-row al-pm"><span>가운데</span><input id="al-pm" maxlength="16" placeholder="비우면 구름" value="${esc(album.pmCenter === "{days}" ? "" : album.pmCenter || "")}" aria-label="소인 가운데 글자 (이모지도 돼)">` +
           `<button type="button" class="al-pm-q${album.pmCenter === "{days}" ? " on" : ""}" data-pm="{days}">사진 수</button></div>`
         : "") +
+      (album.shape === "ticket" ? `<div class="al-row"><span>티켓</span><label class="al-empty"><input type="checkbox" id="al-roll"${album.roll ? " checked" : ""}> 한 주씩 이어 붙이기</label></div>` : "") +
       `<div class="al-row"><span>배경</span>${seg("bg")}<label class="al-empty"><input type="checkbox" id="al-empty"${album.empty ? " checked" : ""}> 빈 날도</label></div>`;
   }
   async function renderAlbum() {
@@ -1657,33 +1697,41 @@
     const list = [];
     for (let d = 1; d <= days; d++) {
       const key = `${y}-${pad(mo + 1)}-${pad(d)}`, c = covers.get(key);
-      if (c || album.empty) list.push({ key, d, id: c ? c.id : "", dow: new Date(y, mo, d).getDay() });
+      if (c || album.empty) list.push({ key, d, id: c ? c.id : "", dow: new Date(y, mo, d).getDay(), focus: c && c.fx != null && c.fy != null ? { x: c.fx, y: c.fy } : null });
     }
     page.classList.toggle("few", list.length > 0 && list.length <= ALBUM_FEW);
     page.style.setProperty("--pm", pmScaleFor(list.length));
     $("al-count").textContent = (covers.size ? `사진 ${covers.size}일` : "이 달엔 대표 사진이 아직 없어") + (locked && !vault ? " · 잠긴 일기는 열어야 보여" : "");
-    const win = album.shape === "window", lays = new Map(win ? list.map((s) => [s.key, winLay(s, y, mo)]) : []);
-    const winStyle = (s) => { const L = lays.get(s.key); return L ? ` style="width:${(L.w + 24) / 2}px;height:${(L.h + 24) / 2}px;margin-top:${L.dy}px"` : ""; };
-    page.innerHTML = headerHTML(y, mo, covers.size) + `<div class="al-grid">` + list.map((s, i) =>
-      `<button type="button" class="stp${s.id ? "" : " none"}${tornAt(i, list.length) ? " torn" : ""}${s.dow === 0 ? " sun" : s.dow === 6 ? " sat" : ""}" data-day="${s.key}" title="${win ? `${s.key} · 눌러서 창문 모양 바꾸기, 두 번 눌러 일기 열기` : `${s.key} 일기 열기`}"${winStyle(s)}><span class="ph"></span><b>${s.d}</b></button>`).join("") + `</div>`;
+    setRoll(list, y, mo);
+    countTickets();
+    page.classList.toggle("roll", rollOn());
+    const win = looseShape(), lays = new Map(win ? list.map((s) => [s.key, layOf(s, y, mo)]) : []);
+    const boxStyle = (L) => `width:${(L.w + 24) / 2}px;height:${(L.h + 24) / 2}px;margin-top:${L.dy}px${L.tilt ? `;transform:rotate(${L.tilt}deg)` : ""}`;
+    const winStyle = (s) => { const L = lays.get(s.key); return L ? ` style="${boxStyle(L)}"` : ""; };
+    const weekBreak = (s, i) => (rollInfo && i > 0 && rollInfo.get(s.key).week !== rollInfo.get(list[i - 1].key).week ? `<i class="wk-br"></i>` : "");
+    page.innerHTML = headerHTML(y, mo, covers.size) + `<div class="al-grid">` + list.map((s, i) => weekBreak(s, i) +
+      `<button type="button" class="stp${s.id ? "" : " none"}${tornAt(i, list.length) ? " torn" : ""}${s.dow === 0 ? " sun" : s.dow === 6 ? " sat" : ""}" data-day="${s.key}" title="${album.shape === "window" ? `${s.key} · 눌러서 창문 모양 바꾸기, 두 번 눌러 일기 열기` : `${s.key} 일기 열기`}"${winStyle(s)}><span class="ph"></span><b>${s.d}</b></button>`).join("") + `</div>`;
     // Load the photos, then draw them all with one palette.
     const imgs = new Map(), gifs = new Map();
     await Promise.all(list.filter((s) => s.id).map(async (s) => {
       try {
         const u = await photoSrc(s.id);
         if (!u) return;
-        imgs.set(s.id, await loadImage(u));
+        const im = await loadImage(u);
+        if (s.focus) im._cmFocus = s.focus; // the "중심" picked on the photo
+        imgs.set(s.id, im);
         const buf = await (await fetch(u)).arrayBuffer();
         if (isGif(buf)) gifs.set(s.id, buf);
       } catch (e) {}
     }));
+    if (win) await dayFontsReady(); // window labels are drawn on the canvas
     if (run !== albumRun) return;
     const pal = album.filter === "halftone" || album.filter === "pastel" ? monthPalette([...imgs.values()], 10) : null;
     // Animated covers: every frame through the same filter (fewer frames each when there are many).
     const anims = new Map(), perGif = Math.max(6, Math.min(36, Math.floor(360 / Math.max(1, gifs.size))));
     for (const [id, buf] of gifs) {
-      const frames = [], delays = [], memo = {}, L = win && lays.get((list.find((x) => x.id === id) || {}).key);
-      try { gifFrames(buf, perGif, (cv, delay) => { frames.push(stampCanvas(cv, album.filter, pal, memo, L ? L.w : TW, L ? L.h : TH)); delays.push(delay); }); } catch (e) {}
+      const owner = list.find((x) => x.id === id) || {}, frames = [], delays = [], memo = {}, L = win && lays.get(owner.key);
+      try { gifFrames(buf, perGif, (cv, delay) => { if (owner.focus) cv._cmFocus = owner.focus; frames.push(stampCanvas(cv, album.filter, pal, memo, L ? L.pw : TW, L ? L.ph : TH)); delays.push(delay); }); } catch (e) {}
       if (frames.length > 1) anims.set(id, { frames, delays });
       await new Promise((r) => setTimeout(r)); // let the screen breathe between GIFs
       if (run !== albumRun) return;
@@ -1694,18 +1742,18 @@
     const paintWindow = (s, fresh) => {
       const btn = page.querySelector(`[data-day="${s.key}"]`), slot = btn && btn.querySelector(".ph");
       if (!slot) return;
-      const L = winLay(s, y, mo), im = s.id && imgs.get(s.id);
+      const L = layOf(s, y, mo), im = s.id && imgs.get(s.id);
       lays.set(s.key, L);
-      btn.style.cssText = `width:${(L.w + 24) / 2}px;height:${(L.h + 24) / 2}px;margin-top:${L.dy}px`;
+      btn.style.cssText = boxStyle(L);
       let a = s.id && anims.get(s.id);
       if (a && fresh && gifs.has(s.id)) {
         const frames = [], delays = [], memo = {};
-        try { gifFrames(gifs.get(s.id), perGif, (cv, delay) => { frames.push(stampCanvas(cv, album.filter, pal, memo, L.w, L.h)); delays.push(delay); }); } catch (e) {}
+        try { gifFrames(gifs.get(s.id), perGif, (cv, delay) => { if (s.focus) cv._cmFocus = s.focus; frames.push(stampCanvas(cv, album.filter, pal, memo, L.pw, L.ph)); delays.push(delay); }); } catch (e) {}
         if (frames.length > 1) { a = { frames, delays }; anims.set(s.id, a); }
       }
       const framed = (photo) => { const c = canvasOf(L.w + 24, L.h + 24); drawStamp(c.getContext("2d"), 12, 12, L.w, L.h, photo, s.d, inkS, s.dow, 0, L.kind); return c; };
       if (a) { const fa = { frames: a.frames.map(framed), delays: a.delays }, cv = canvasOf(L.w + 24, L.h + 24); cv.getContext("2d").drawImage(fa.frames[0], 0, 0); slot.replaceChildren(cv); playStamp(cv, fa, run); }
-      else slot.replaceChildren(framed(im ? stampCanvas(im, album.filter, pal, null, L.w, L.h) : null));
+      else slot.replaceChildren(framed(im ? stampCanvas(im, album.filter, pal, null, L.pw, L.ph) : null));
       if (s.id && !im) btn.classList.add("missing");
     };
     for (const s of list) {
@@ -1746,7 +1794,7 @@
   // "이미지로 저장": the page drawn on a canvas (same look as the screen) as one PNG.
   const ALBUM_FEW = 5; // up to this many stamps: one centered row (screen and saved image)
   // Tickets: one long strip; the month's last ticket is torn off and lies a little crooked.
-  const tornAt = (i, n) => album.shape === "ticket" && n > 1 && i === n - 1;
+  const tornAt = () => false; // (tickets now lie loosely, each a little crooked)
   const TORN = { dx: 22, deg: 6 };
   // Postmark size for a short row, so it doesn't tower over one or two stamps: about the row's
   // width, never under 60%. Measured on the saved image (stamps 200 wide, 34 apart; postmark 621).
@@ -1766,6 +1814,7 @@
   async function albumCanvas() {
     const st = albumStamps;
     if (!st) return null;
+    await dayFontsReady();
     const n = st.list.length, few = n > 0 && n <= ALBUM_FEW; // a handful of photos: one centered row, page sized to fit
     const pm = pmScaleFor(n);
     const ticket = album.shape === "ticket";
@@ -1778,7 +1827,7 @@
     const hc = canvasOf(1600, top), hg = hc.getContext("2d", { willReadFrequently: true });
     await drawAlbumHeader(hg, 0, st.y, st.mo, ink, css.getPropertyValue("--font"), st.days, pm);
     const hb = inkBounds(hg, 1600, top);
-    if (album.shape === "window") return windowPage({ st, n, few, top, bottom, mx, css, ink, hc, hb });
+    if (looseShape()) return windowPage({ st, n, few, top, bottom, mx, css, ink, hc, hb });
     const gridW = cols * sw + (cols - 1) * gap;
     const contentW = (few ? Math.max(gridW, hb.w, 560) : 5 * sw + 4 * gap) + (ticket && n > 1 ? TORN.dx + 16 : 0);
     const W = mx * 2 + contentW, H = top + rows * (sh + gapY + (album.shape === "polaroid" ? 28 : 0)) - gapY + bottom;
@@ -1801,34 +1850,37 @@
     g.fillText("클라우드 메모", few ? W / 2 : mx, H - 40); g.globalAlpha = 1; g.textAlign = "left";
     return { c, g, W, H, bg, ink, sw, sh, slots };
   }
-  // 창문 page: windows of different sizes flow in rows (each row centered), stars in between.
+  // 창문 / 티켓 page: pieces of different sizes flow in rows (each row centered); windows get stars in between.
   function windowPage(o) {
-    const { st, n, few, top, bottom, mx, css, ink, hc, hb } = o, GX = 34, GY = 30, maxW = 5 * 200 + 4 * 34;
+    const { st, n, few, top, bottom, mx, css, ink, hc, hb } = o;
+    setRoll(st.list, st.y, st.mo);
+    countTickets();
+    const roll = !!rollInfo, GX = roll ? 0 : 34, GY = roll ? 40 : 30, maxW = roll ? 7 * 200 : 5 * 200 + 4 * 34;
     const rows = [];
     let row = null;
     for (const s of st.list) {
-      const L = winLay(s, st.y, st.mo);
-      if (!row || row.w + GX + L.w > maxW) { row = { items: [], w: -GX, h: 0 }; rows.push(row); }
+      const L = layOf(s, st.y, st.mo);
+      if (!row || row.w + GX + L.w > maxW || (roll && row.week !== L.week)) { row = { items: [], w: -GX, h: 0, week: L.week }; rows.push(row); }
       row.items.push({ s, L }); row.w += GX + L.w; row.h = Math.max(row.h, L.h + Math.abs(L.dy) * 2);
     }
-    const contentW = few || rows.length <= 1 ? Math.max(rows[0] ? rows[0].w : 0, hb.w, 560) : maxW;
+    const contentW = few || rows.length <= 1 ? Math.max(rows[0] ? rows[0].w : 0, hb.w, 560) : roll ? Math.max(...rows.map((r) => r.w)) : maxW;
     const gridH = rows.reduce((a, r) => a + r.h, 0) + GY * Math.max(0, rows.length - 1);
     const W = mx * 2 + contentW, H = top + Math.max(gridH, 0) + bottom;
     const c = canvasOf(W, H), g = c.getContext("2d", { willReadFrequently: true });
     const bg = album.bg === "theme" ? css.getPropertyValue("--bg").trim() || "#f6f5f2" : "#ffffff";
     g.fillStyle = bg; g.fillRect(0, 0, W, H);
     g.drawImage(hc, few ? Math.round((W - hb.w) / 2) - hb.x : mx, 0);
-    const sparks = sparkles(mx - 20, top - 16, contentW + 40, gridH + 32, st.y * 13 + st.mo * 7);
-    drawSparkles(g, sparks);
+    const sparks = album.shape === "window" ? sparkles(mx - 20, top - 16, contentW + 40, gridH + 32, st.y * 13 + st.mo * 7) : null;
+    if (sparks) drawSparkles(g, sparks);
     const slots = [];
     let yy = top;
     for (const r of rows) {
-      let xx = mx + (contentW - r.w) / 2;
+      let xx = roll && !few && rows.length > 1 ? mx : mx + (contentW - r.w) / 2; // week rolls start at the left
       for (const { s, L } of r.items) {
         const cx = Math.round(xx), cy = Math.round(yy + (r.h - L.h) / 2 + L.dy);
         const im = s.id && st.imgs.get(s.id), a = s.id && st.anims && st.anims.get(s.id);
-        drawStamp(g, cx, cy, L.w, L.h, a ? a.frames[0] : im ? stampCanvas(im, album.filter, st.pal, null, L.w, L.h) : null, s.d, ink, s.dow, 0, L.kind);
-        if (a) slots.push({ s, a, cx, cy, tilt: 0, lay: L });
+        drawStamp(g, cx, cy, L.w, L.h, a ? a.frames[0] : im ? stampCanvas(im, album.filter, st.pal, null, L.pw, L.ph) : null, s.d, ink, s.dow, L.tilt, L.kind);
+        if (a) slots.push({ s, a, cx, cy, tilt: L.tilt, lay: L });
         xx += L.w + GX;
       }
       yy += r.h + GY;
@@ -1852,7 +1904,7 @@
     const nF = Math.max(2, Math.round(total / step));
     const frameAt = (a, t) => { t %= dur(a); for (let i = 0; i < a.delays.length; i++) { if (t < a.delays[i]) return i; t -= a.delays[i]; } return 0; };
     const boxH = album.shape === "circle" ? sw : album.shape === "polaroid" ? sh + 28 : sh;
-    const margin = (x) => album.shape !== "ticket" ? 16 : x.tilt ? 20 : 0;
+    const margin = (x) => (x.lay && x.lay.kind && typeof x.lay.kind === "object" ? 0 : x.tilt ? 26 : 16);
     const sizeOf = (x) => (x.lay ? [x.lay.w, x.lay.h, x.lay.h] : [sw, sh, boxH]);
     const redraw = (x, k) => { // clear the stamp's spot (and its shadow), draw frame k
       const M = margin(x), [ww, hh, bh] = sizeOf(x);
@@ -1903,6 +1955,7 @@
   // One stamp on the export canvas. The frame's outer box is w×h (circle: w×w; polaroid: + a
   // 28px caption strip); the photo fills the inner box, cropped to fit.
   function drawStamp(g, x, y, w, h, photo, day, ink, dow, tilt = 0, kind = null) {
+    if (album.shape === "ticket") { const R = kind && typeof kind === "object" ? kind : null; stampOut(g, ticketLayer(w, h, photo, day, dow, R), x, y, w, h, tilt, !R); return; }
     const wk = kind == null ? day % 4 : kind; // window frame
     const dayInk = dow === 0 ? "#e03131" : dow === 6 ? "#1971c2" : "#2b2a28"; // Sunday red, Saturday blue
     const shape = album.shape, font = getComputedStyle(document.documentElement).getPropertyValue("--font");
@@ -1918,8 +1971,6 @@
     if (photo) { // crop the thumbnail to the inner box's shape
       const s = Math.max(inner.w / photo.width, inner.h / photo.height), sw = inner.w / s, sh = inner.h / s;
       lg.drawImage(photo, (photo.width - sw) / 2, (photo.height - sh) / 2, sw, sh, inner.x, inner.y, inner.w, inner.h);
-    } else if (shape === "ticket") { // an empty ticket: plain paper
-      lg.fillStyle = "#f3f1ec"; lg.fillRect(inner.x, inner.y, inner.w, inner.h);
     } else if (shape === "window") { // an empty window: pale glass
       lg.fillStyle = "#f7f2e6"; lg.fillRect(inner.x, inner.y, inner.w, inner.h);
     } else {
@@ -1937,45 +1988,126 @@
       windowPath(lg, 7, 7, w - 12, h - 12, k);
       lg.strokeStyle = "rgba(70,50,15,.45)"; lg.lineWidth = 1.5; lg.stroke();
     }
-    if (shape === "ticket") { // fine outline, and a round notch in the middle of each side (shared with the next ticket)
-      const R = 12, notch = (ex) => { lg.beginPath(); lg.arc(ex, 1 + h / 2, R, 0, Math.PI * 2); };
-      lg.strokeStyle = "rgba(0,0,0,.22)"; lg.lineWidth = 2; lg.strokeRect(1, 1, w, h);
-      lg.globalCompositeOperation = "destination-out";
-      notch(1); lg.fill(); notch(1 + w); lg.fill();
-      lg.globalCompositeOperation = "source-over";
-      notch(1); lg.stroke(); notch(1 + w); lg.stroke();
-    }
     if (shape === "stamp") { // perforated edge
       lg.globalCompositeOperation = "destination-out";
       for (let t = 0; t <= w; t += 20) { hole(lg, 1 + t, 1); hole(lg, 1 + t, 1 + h); } // 20px apart: 200×240 ends on a hole
       for (let t = 0; t <= h; t += 20) { hole(lg, 1, 1 + t); hole(lg, 1 + w, 1 + t); }
       lg.globalCompositeOperation = "source-over";
     }
-    lg.font = "700 22px " + font;
-    const label = String(day);
-    if (shape === "polaroid") { lg.textAlign = "right"; lg.fillStyle = dow === 0 || dow === 6 ? dayInk : "#55524c"; lg.fillText(label, w - 8, h + 20); }
-    else {
-      // On a photo the number sits on a small white tab (like a stamp's value) so its color reads.
-      const tw = lg.measureText(label).width + 14, th = 28;
-      const mid = shape === "circle" || shape === "window";
-      const right = mid ? w / 2 + 1 + tw / 2 : inner.x + inner.w - 6;
-      const bottom = shape === "circle" ? w - 10 : shape === "window" ? h - 12 : inner.y + inner.h - 6;
-      if (photo) { lg.fillStyle = "rgba(255,255,255,.92)"; roundRect(lg, right - tw, bottom - th, tw, th, 8); lg.fill(); }
-      lg.fillStyle = photo || dow === 0 || dow === 6 ? dayInk : ink;
-      lg.textAlign = "center";
-      lg.fillText(label, right - tw / 2, bottom - 7);
+    // The day number, dressed for the shape (same look as on the screen):
+    // stamp: a serif value · ticket: "No.7" typed on a paper tab · window: a Roman numeral on a gold plaque
+    // polaroid: handwritten · round: a thin pill · circle: a small round badge.
+    const label = String(day), F = HEAD_FONTS, weekend = dow === 0 || dow === 6;
+    lg.textAlign = "center";
+    if (shape === "polaroid") {
+      lg.save(); lg.font = `600 34px ${F.script}`; lg.textAlign = "right"; lg.fillStyle = weekend ? dayInk : "#55524c";
+      lg.translate(w - 10, h + 23); lg.rotate(-0.07); lg.fillText(label, 0, 0); lg.restore();
+    } else if (shape === "window") {
+      const txt = romanNum(day);
+      lg.font = `500 21px ${F.display}`;
+      const tw = Math.max(34, lg.measureText(txt).width + 22), th = 28, cx = w / 2 + 1, by = h - 12;
+      const gold = lg.createLinearGradient(cx - tw / 2, 0, cx + tw / 2, 0);
+      gold.addColorStop(0, "#e9cf86"); gold.addColorStop(0.5, "#c49a45"); gold.addColorStop(1, "#ead38e");
+      roundRect(lg, cx - tw / 2, by - th, tw, th, 6); lg.fillStyle = gold; lg.fill();
+      lg.strokeStyle = "rgba(70,50,15,.5)"; lg.lineWidth = 1.2; lg.stroke();
+      lg.fillStyle = dow === 0 ? "#8f2222" : dow === 6 ? "#1f3f7a" : "#4a3510";
+      lg.fillText(txt, cx, by - 8);
+    } else { // stamp, round, circle: on a photo the number sits on a small tab so its color reads
+      lg.font = shape === "stamp" ? `500 23px ${F.display}` : shape === "round" ? `400 22px ${F.year}` : "700 22px " + font;
+      const tw = Math.max(shape === "stamp" ? 0 : 28, lg.measureText(label).width + 14), th = 28, r = shape === "stamp" ? 6 : 14;
+      const right = shape === "circle" ? w / 2 + 1 + tw / 2 : inner.x + inner.w - 6;
+      const bottom = shape === "circle" ? w - 10 : inner.y + inner.h - 6;
+      if (photo) { lg.fillStyle = "rgba(255,255,255,.92)"; roundRect(lg, right - tw, bottom - th, tw, th, r); lg.fill(); }
+      lg.fillStyle = photo || weekend ? dayInk : ink;
+      lg.fillText(label, right - tw / 2, bottom - (shape === "round" ? 6 : 7));
     }
+    stampOut(g, layer, x, y, w, boxH, tilt);
+  }
+  // Puts a drawn piece on the page: turned by `tilt` degrees, with a faint outline and a soft shadow.
+  function stampOut(g, layer, x, y, w, boxH, tilt, shadow = true) {
     g.save();
     if (tilt) { g.translate(x + w / 2, y + boxH / 2); g.rotate((tilt * Math.PI) / 180); g.translate(-(x + w / 2), -(y + boxH / 2)); }
-    if (shape === "ticket") { // flat paper: its own outline, no shadow (tickets touch their neighbors)
-      g.drawImage(layer, x - 1, y - 1);
-    } else { // faint outline (so a white stamp shows on white), then a soft shadow
-      g.shadowColor = "rgba(0,0,0,.07)"; g.shadowBlur = 8; g.shadowOffsetY = 2;
-      g.drawImage(layer, x - 1, y - 1);
-      g.shadowColor = "rgba(0,0,0,.16)"; g.shadowBlur = 1.4; g.shadowOffsetY = 0;
-      g.drawImage(layer, x - 1, y - 1);
-    }
+    if (shadow) { g.shadowColor = "rgba(0,0,0,.07)"; g.shadowBlur = 8; g.shadowOffsetY = 2; g.drawImage(layer, x - 1, y - 1); g.shadowColor = "rgba(0,0,0,.16)"; g.shadowBlur = 1.4; g.shadowOffsetY = 0; }
+    g.drawImage(layer, x - 1, y - 1);
     g.restore();
+  }
+  // An old paper ticket: colored card with notched corners, a double border, ADMIT ONE, the photo in
+  // a window, then a dashed tear line and the stub with the day, month and a serial number.
+  const TICKET_PAPERS = ["#cfc8a6", "#d65b4b", "#e3b458", "#ea9150", "#47ab8b", "#d88fbb", "#8fb4da", "#efe1c0", "#b45468", "#9ec6b0", "#f0c98a", "#7d9bc9"];
+  // Ticket serial numbers: every day that has a cover photo, counted from the very first photo
+  // diary (No.0001) on, across months and years. Days without a photo get no number.
+  let ticketSerials = new Map();
+  function countTickets() {
+    const days = new Set();
+    for (const m of memos) { if (!isDiary(m)) continue; const b = bodyOf(m); if (b != null && coverOf(b)) days.add(m.diary); }
+    ticketSerials = new Map([...days].sort().map((d, i) => [d, i + 1]));
+  }
+  // roll (optional): { paper, left, right } when the ticket is part of a week's roll.
+  function ticketLayer(w, h, photo, day, dow, roll) {
+    const mo = albumMonth ? albumMonth.getMonth() : 0, yr = albumMonth ? albumMonth.getFullYear() : 2026;
+    const paper = roll ? roll.paper : TICKET_PAPERS[Math.floor(hash01(day * 7.77 + mo * 31 + yr) * TICKET_PAPERS.length)];
+    const endL = !roll || roll.left, endR = !roll || roll.right; // notched corners only at a roll's ends
+    const [pr, pg, pb] = hexRGB(paper), lum = pr * 0.3 + pg * 0.59 + pb * 0.11, darkPaper = lum < 150;
+    const mix = (a, b, t) => a.map((v, i) => Math.round(v * (1 - t) + b[i] * t));
+    const inkRGB = darkPaper ? [251, 243, 223] : mix([pr, pg, pb], [40, 28, 20], 0.72), ink = `rgb(${inkRGB.join(",")})`;
+    const layer = canvasOf(w + 2, h + 2), lg = layer.getContext("2d"), F = HEAD_FONTS;
+    lg.translate(1, 1);
+    const pf = h - 76, R = 14, N = 10; // tear line, corner notch, side notch
+    const J = 7; // half notch at the top and bottom of a join inside a roll (and the tear-line notch, as at the ends)
+    const outline = () => {
+      lg.beginPath();
+      lg.moveTo(endL ? R : J, 0);
+      if (endR) { lg.lineTo(w - R, 0); lg.arc(w, 0, R, Math.PI, Math.PI / 2, true); lg.lineTo(w, pf - N); lg.arc(w, pf, N, -Math.PI / 2, Math.PI / 2, true); lg.lineTo(w, h - R); lg.arc(w, h, R, -Math.PI / 2, Math.PI, true); }
+      else { lg.lineTo(w - J, 0); lg.arc(w, 0, J, Math.PI, Math.PI / 2, true); lg.lineTo(w, pf - N); lg.arc(w, pf, N, -Math.PI / 2, Math.PI / 2, true); lg.lineTo(w, h - J); lg.arc(w, h, J, -Math.PI / 2, Math.PI, true); }
+      if (endL) { lg.lineTo(R, h); lg.arc(0, h, R, 0, -Math.PI / 2, true); lg.lineTo(0, pf + N); lg.arc(0, pf, N, Math.PI / 2, -Math.PI / 2, true); lg.lineTo(0, R); lg.arc(0, 0, R, Math.PI / 2, 0, true); }
+      else { lg.lineTo(J, h); lg.arc(0, h, J, 0, -Math.PI / 2, true); lg.lineTo(0, pf + N); lg.arc(0, pf, N, Math.PI / 2, -Math.PI / 2, true); lg.lineTo(0, J); lg.arc(0, 0, J, Math.PI / 2, 0, true); }
+      lg.closePath();
+    };
+    outline(); lg.fillStyle = paper; lg.fill();
+    lg.save(); outline(); lg.clip();
+    for (let i = 0; i < 700; i++) { // paper grain and a little wear
+      const r = hash01(day * 13.1 + i * 1.7);
+      lg.fillStyle = r < 0.5 ? "rgba(60,40,20,.06)" : "rgba(255,250,235,.10)";
+      lg.fillRect(hash01(i * 3.3 + day) * w, hash01(i * 5.1 + day * 2) * h, 1 + r * 2, 1 + r * 2);
+    }
+    lg.restore();
+    lg.strokeStyle = ink; lg.globalAlpha = 0.55; lg.lineWidth = 1.4; // double border
+    roundRect(lg, 9, 9, w - 18, pf - 15, 3); lg.stroke();
+    lg.globalAlpha = 0.3; lg.lineWidth = 1;
+    roundRect(lg, 13, 13, w - 26, pf - 23, 2); lg.stroke();
+    lg.globalAlpha = 1;
+    // ADMIT ONE
+    lg.fillStyle = ink; lg.textAlign = "center"; lg.font = `400 15px ${F.type}`;
+    const head = "ADMIT ONE";
+    let hx = w / 2 - ([...head].reduce((a, ch) => a + lg.measureText(ch).width + 2.2, 0) - 2.2) / 2;
+    lg.textAlign = "left";
+    for (const ch of head) { lg.fillText(ch, hx, 37); hx += lg.measureText(ch).width + 2.2; }
+    lg.font = `400 11px ${F.type}`; lg.fillText("★", 24, 36); lg.textAlign = "right"; lg.fillText("★", w - 24, 36);
+    // photo window
+    const px = (w - TKT.pw) / 2, py = 48;
+    if (photo) {
+      const s = Math.max(TKT.pw / photo.width, TKT.ph / photo.height), sw = TKT.pw / s, sh = TKT.ph / s;
+      lg.drawImage(photo, (photo.width - sw) / 2, (photo.height - sh) / 2, sw, sh, px, py, TKT.pw, TKT.ph);
+    } else {
+      lg.fillStyle = `rgba(${mix([pr, pg, pb], [255, 255, 255], 0.45).join(",")},1)`; lg.fillRect(px, py, TKT.pw, TKT.ph);
+    }
+    lg.strokeStyle = ink; lg.globalAlpha = 0.7; lg.lineWidth = 1.5; lg.strokeRect(px, py, TKT.pw, TKT.ph); lg.globalAlpha = 1;
+    // tear lines: across above the stub, and down the right edge between two tickets of a roll
+    lg.save(); lg.setLineDash([6, 5]); lg.strokeStyle = ink; lg.globalAlpha = 0.6; lg.lineWidth = 1.5;
+    lg.beginPath(); lg.moveTo(endL ? N + 6 : 4, pf); lg.lineTo(endR ? w - N - 6 : w - 4, pf); lg.stroke();
+    if (!endR) { lg.globalAlpha = 0.45; lg.beginPath(); lg.moveTo(w - 0.75, J + 3); lg.lineTo(w - 0.75, pf - N - 3); lg.moveTo(w - 0.75, pf + N + 3); lg.lineTo(w - 0.75, h - J - 3); lg.stroke(); }
+    lg.restore();
+    // stub: the day big, month and year beside it, a serial number
+    const weekendInk = !darkPaper && (dow === 0 ? "#a3261e" : dow === 6 ? "#1d4f8f" : null);
+    lg.textAlign = "left"; lg.fillStyle = weekendInk || ink; lg.font = `500 44px ${F.display}`;
+    lg.fillText(String(day), 20, pf + 55);
+    const dw = lg.measureText(String(day)).width;
+    lg.fillStyle = ink; lg.font = `400 15px ${F.type}`;
+    lg.fillText(MONTH_EN[mo].slice(0, 3).toUpperCase(), 28 + dw, pf + 32);
+    lg.font = `400 12px ${F.type}`; lg.globalAlpha = 0.75; lg.fillText(String(yr), 28 + dw, pf + 50); lg.globalAlpha = 1;
+    const serial = photo && ticketSerials.get(`${yr}-${pad(mo + 1)}-${pad(day)}`);
+    if (serial) { lg.textAlign = "right"; lg.font = `400 14px ${F.type}`; lg.fillText("No." + String(serial).padStart(4, "0"), w - 18, pf + 47); }
+    return layer;
   }
   // Window frames, one per day in turn: arch, oval, cut corners, rounded.
   function windowPath(g, x, y, w, h, kind) {
@@ -1987,6 +2119,10 @@
     else if (kind === 2) { const c = Math.min(w, h) * 0.17; g.moveTo(x + c, y); g.lineTo(x + w - c, y); g.lineTo(x + w, y + c); g.lineTo(x + w, y + h - c); g.lineTo(x + w - c, y + h); g.lineTo(x + c, y + h); g.lineTo(x, y + h - c); g.lineTo(x, y + c); g.closePath(); }
     else { roundRect(g, x, y, w, h, Math.min(w, h) * 0.1); }
   }
+  const romanNum = (n) => [[10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]].reduce((o, [v, r]) => { while (n >= v) { o += r; n -= v; } return o; }, "");
+  // The day-number fonts, ready before anything is drawn on a canvas.
+  const DAY_FONTS = ['500 23px "Playfair Display"', '400 21px "Special Elite"', '600 34px "Caveat"', '400 22px "Josefin Sans"'];
+  const dayFontsReady = () => Promise.all(DAY_FONTS.map((f) => document.fonts.load(f, "0123456789No.IVX"))).catch(() => {});
   function hole(g, x, y) { g.beginPath(); g.arc(x, y, 7, 0, 7); g.fill(); }
   function roundRect(g, x, y, w, h, r) {
     g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
@@ -4039,7 +4175,7 @@
         for (const x of editor.querySelectorAll("img[data-rep]")) x.removeAttribute("data-rep");
         img.dataset.rep = "1";
         afterEdit(); flashMeta("대표 사진으로 정했어");
-      } }, "-");
+      } }, { label: img.dataset.fx != null ? "중심 찍기 (찍혀 있음)" : "중심 찍기 (앨범에서 가운데 올 곳)", onPick: () => pickFocus(img) }, "-");
     }
     if (prevLine()) items.push({ label: "위로 옮기기", onPick: () => movePhoto(img, { line: prevLine(), after: false }) });
     if (nextLine()) items.push({ label: "아래로 옮기기", onPick: () => movePhoto(img, { line: nextLine(), after: true }) });
@@ -4052,6 +4188,34 @@
     openMenu(img, items);
   });
 
+  // "중심 찍기": tap where the face is; the album's frames are cropped around it.
+  function pickFocus(img) {
+    const ov = document.createElement("div");
+    ov.className = "overlay focus-pick";
+    ov.innerHTML = `<div class="sheet fp" role="dialog" aria-modal="true" aria-label="중심 찍기">
+      <h2>중심 찍기</h2><p class="fp-note">얼굴처럼 앨범에서 꼭 보여야 하는 곳을 눌러 줘.</p>
+      <div class="fp-box"><img alt="사진" src="${img.src}"><i class="fp-dot" hidden></i></div>
+      <div class="sheet-btns"><button type="button" class="text-btn" data-a="clear">중심 지우기</button><button type="button" class="text-btn" data-a="cancel">취소</button><button type="button" class="text-btn primary" data-a="ok">완료</button></div></div>`;
+    document.body.appendChild(ov);
+    const box = ov.querySelector(".fp-box"), dot = ov.querySelector(".fp-dot");
+    let pt = img.dataset.fx != null ? { x: +img.dataset.fx, y: +img.dataset.fy } : null;
+    const show = () => { dot.hidden = !pt; if (pt) { dot.style.left = pt.x * 100 + "%"; dot.style.top = pt.y * 100 + "%"; } };
+    show();
+    box.onclick = (e) => {
+      const r = box.querySelector("img").getBoundingClientRect();
+      pt = { x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)) };
+      show();
+    };
+    const close = () => ov.remove();
+    ov.addEventListener("click", (e) => {
+      if (e.target === ov) { close(); return; }
+      const a = e.target.closest("[data-a]");
+      if (!a) return;
+      if (a.dataset.a === "ok" && pt) { img.dataset.fx = pt.x.toFixed(3); img.dataset.fy = pt.y.toFixed(3); afterEdit(); flashMeta("중심을 찍었어"); }
+      if (a.dataset.a === "clear") { delete img.dataset.fx; delete img.dataset.fy; afterEdit(); flashMeta("중심을 지웠어"); }
+      close();
+    });
+  }
   // Dragging a photo inside the memo moves it between lines (a bar shows where it lands).
   // The browser also offers the dragged picture as a "file", so this must win over the
   // file drop below, which would otherwise add a copy.
@@ -4176,7 +4340,10 @@
     }, 260) };
   });
   let winTap = null;
-  $("album").addEventListener("change", (e) => { if (e.target.id === "al-empty") { album.empty = e.target.checked; saveAlbumOpts(); } });
+  $("album").addEventListener("change", (e) => {
+    if (e.target.id === "al-empty") { album.empty = e.target.checked; saveAlbumOpts(); }
+    if (e.target.id === "al-roll") { album.roll = e.target.checked; saveAlbumOpts(); }
+  });
   // Typing in the postmark's middle redraws only the header, so the box keeps focus.
   $("album").addEventListener("input", (e) => {
     if (e.target.id !== "al-pm") return;

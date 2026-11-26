@@ -810,29 +810,15 @@ section[data-h="tips"] .tips { margin-top: 0; }
 .sheet.album.deco-open .al-deco svg { transform: rotate(180deg); }
 .sheet.album:not(.deco-open) .al-opts { display: none; }
 
-/* Album shape "티켓": one strip of tickets that touch, a round notch at every joint, and the
-   month's last ticket torn off and lying a little crooked. */
-.al-page.bg-white { --pbg: #ffffff; }
-.al-page.bg-theme { --pbg: var(--bg); }
-.shape-ticket .al-grid { grid-template-columns: repeat(auto-fill, 99px); gap: 26px 0; justify-content: start; padding-left: 1px; }
-.al-page.few.shape-ticket .al-grid { grid-template-columns: repeat(auto-fit, 99px); gap: 26px 0; justify-content: center; }
-.shape-ticket .stp { margin-left: -1px; }
-.shape-ticket .stp .ph { width: 100px; height: 140px; box-sizing: border-box; border: 1px solid rgba(0, 0, 0, .2); overflow: hidden; background: #f3f1ec; }
-.shape-ticket .stp::before, .shape-ticket .stp::after {
-  content: ""; position: absolute; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%;
-  background: var(--pbg); border: 1px solid rgba(0, 0, 0, .2); box-sizing: border-box; z-index: 1;
-}
-.shape-ticket .stp::before { left: -6px; }
-.shape-ticket .stp::after { right: -6px; }
-.shape-ticket .stp.none .ph::after { border: 0; background: none; }
-.shape-ticket .stp b { right: 7px; bottom: 7px; }
-.shape-ticket .stp:hover { transform: none; filter: none; }
-.shape-ticket .stp.torn, .shape-ticket .stp.torn:hover { transform: translate(11px, 3px) rotate(6deg); z-index: 2; }
-@media (max-width: 520px) {
-  .shape-ticket .al-grid, .al-page.few.shape-ticket .al-grid { grid-template-columns: repeat(auto-fill, 79px); gap: 20px 0; }
-  .al-page.few.shape-ticket .al-grid { grid-template-columns: repeat(auto-fit, 79px); }
-  .shape-ticket .stp .ph { width: 80px; height: 112px; }
-}
+/* Album shape "티켓": old paper tickets, each drawn on its canvas (same as the saved image), lying
+   loosely and a little crooked. */
+.shape-ticket .al-grid { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px 14px; padding: 8px 0 12px; }
+.shape-ticket .stp { flex: none; }
+.shape-ticket .stp .ph { width: 100%; height: 100%; }
+.shape-ticket .stp .ph canvas { width: 100%; height: 100%; }
+.shape-ticket .stp b { display: none; }
+.shape-ticket .stp.none .ph::after { display: none; }
+@media (max-width: 520px) { .shape-ticket .al-grid { gap: 10px 8px; } .shape-ticket .stp { zoom: .78; } }
 .al-count { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 @media (max-width: 520px) { .al-top h2 { min-width: 0; font-size: 16px; } .al-count { visibility: hidden; } }
 
@@ -854,3 +840,27 @@ section[data-h="tips"] .tips { margin-top: 0; }
 
 .al-seg .gp { display: inline-flex; gap: 2px; margin-right: 5px; vertical-align: -1px; }
 .al-seg .gp i { width: 8px; height: 8px; border-radius: 2px; display: block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+
+/* "중심 찍기": tap where the face is */
+.focus-pick { z-index: 60; }
+.sheet.fp { width: min(560px, 100%); display: flex; flex-direction: column; gap: 10px; }
+.sheet.fp h2 { margin: 0; font-size: 17px; }
+.fp-note { margin: 0; font-size: 13px; color: var(--muted); }
+.fp-box { position: relative; align-self: center; cursor: crosshair; line-height: 0; }
+.fp-box img { display: block; max-width: 100%; max-height: min(60vh, 520px); border-radius: 10px; user-select: none; -webkit-user-select: none; }
+.fp-dot {
+  position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; pointer-events: none;
+  border: 3px solid #fff; box-shadow: 0 0 0 2px var(--accent), 0 2px 8px rgba(0, 0, 0, .35);
+}
+
+/* Day numbers dressed for each shape (the saved image draws them the same way). */
+.shape-stamp .stp b { font-family: "Playfair Display", serif; font-weight: 500; font-size: 12.5px; padding: 2px 5px 3px; }
+.shape-polaroid .stp b { font-family: "Caveat", cursive; font-weight: 600; font-size: 17px; transform: rotate(-4deg); bottom: 2px; }
+.shape-round .stp b { font-family: "Josefin Sans", sans-serif; font-weight: 400; border-radius: 999px; padding: 4px 7px 2px; }
+.shape-circle .stp b { border-radius: 999px; min-width: 22px; text-align: center; }
+
+/* 한 주씩 이어 붙인 티켓: one row per week, tickets touching (their canvases overlap by the shadow margin). */
+.al-page.roll .al-grid { justify-content: flex-start; column-gap: 0; row-gap: 16px; }
+.al-page.roll .stp { zoom: .82; }
+.al-page.roll .stp + .stp { margin-left: -12px; }
+.al-page.roll .wk-br { flex-basis: 100%; height: 0; }
