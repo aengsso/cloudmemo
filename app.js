@@ -516,20 +516,24 @@
     }
     vault = null;
     pendingSecret.clear();
+    forgetLockedPhotos();
     renderAll();
   }
   async function moveToSecret() {
     const m = memos.find((x) => x.id === currentId);
     if (!m || !(await unlockVault())) return;
     await flush();
-    const text = serialize(); // the editor holds this memo, now saved
+    // The editor holds this memo, now saved. Its photos get encrypted copies.
+    const { body: text, replaced } = await recastPhotos(serialize(), true);
     const enc = await encryptFor(text);
     await api.save(m.id, enc);
     if (m.folder) await api.setFolder(m.id, "");
     vault.plain.set(m.id, { cipher: enc, text });
     if (!plain(text).trim()) pendingSecret.add(m.id);
     shownBody = enc;
+    if (replaced.length) setContent(text, enc);
     memos = await api.list();
+    await dropUnused(replaced);
     setFilter(SECRET);
     renderEditor();
     flashMeta("비밀 폴더로 옮김");
@@ -538,12 +542,15 @@
     const m = memos.find((x) => x.id === currentId);
     if (!m || !vault) return;
     await flush();
-    const text = serialize(); // decrypted text shown in the editor, now saved
+    // Decrypted text shown in the editor, now saved. Its photos get plain copies.
+    const { body: text, replaced } = await recastPhotos(serialize(), false);
     await api.save(m.id, text);
     vault.plain.delete(m.id);
     pendingSecret.delete(m.id);
     shownBody = text;
+    if (replaced.length) setContent(text);
     memos = await api.list();
+    await dropUnused(replaced);
     setFilter(null);
     renderEditor();
     flashMeta("비밀 해제됨");
@@ -556,17 +563,21 @@
     });
     if (!pw) return;
     await flush();
-    let salt = "";
+    const key = { pw, salt: "" }, replaced = [];
     for (const m of memos.filter((x) => isLocked(x.body) && bodyOf(x) != null)) {
-      const enc = await api.encrypt(pw, salt, bodyOf(m));
-      salt = salt || saltOf(enc);
+      const r = await recastPhotos(bodyOf(m), true, { from: vault.pw, key }); // photos: new password too
+      replaced.push(...r.replaced);
+      const enc = await api.encrypt(pw, key.salt, r.body);
+      key.salt = key.salt || saltOf(enc);
       await api.save(m.id, enc);
     }
-    vault = { pw, salt, plain: new Map() };
+    forgetLockedPhotos();
+    vault = { pw, salt: key.salt, plain: new Map() };
     memos = await api.list();
     await decryptAll();
     const cur = memos.find((x) => x.id === currentId);
-    if (cur && isSecret(cur)) shownBody = cur.body;
+    if (cur && isLocked(cur.body) && bodyOf(cur) != null) { shownBody = cur.body; if (replaced.length) setContent(bodyOf(cur), cur.body); }
+    await dropUnused(replaced);
     renderAll();
     flashMeta("비밀번호를 바꿨어");
   }
@@ -728,33 +739,41 @@
     if (!(await unlockVault())) return;
     if (!confirm("일기를 모두 비밀번호로 잠글까?\n비밀 폴더와 같은 비밀번호를 써. 비밀번호를 잊으면 일기를 되살릴 수 없어.")) return;
     await flush();
+    const replaced = [];
     for (const m of memos.filter((x) => isDiary(x) && !isLocked(x.body) && plain(x.body).trim())) {
-      const enc = await encryptFor(m.body);
+      const r = await recastPhotos(m.body, true); // photos: encrypted copies
+      replaced.push(...r.replaced);
+      const enc = await encryptFor(r.body);
       await api.save(m.id, enc);
-      vault.plain.set(m.id, { cipher: enc, text: m.body });
+      vault.plain.set(m.id, { cipher: enc, text: r.body });
     }
     for (const m of memos) if (isDiary(m) && !isLocked(m.body)) pendingSecret.add(m.id); // empty new entries
     lsSet(DIARY_LOCK_KEY, true);
     memos = await api.list();
     const cur = memos.find((x) => x.id === currentId);
-    if (cur && isDiary(cur)) shownBody = cur.body;
+    if (cur && isDiary(cur)) { shownBody = cur.body; if (replaced.length && bodyOf(cur) != null) setContent(bodyOf(cur), cur.body); }
+    await dropUnused(replaced);
     renderAll();
     flashMeta("일기를 잠갔어");
   }
   async function lockDiaryOff() {
     if (!vault || !confirm("일기 잠금을 풀까? 일기가 다시 암호화 없이 저장돼.")) return;
     await flush();
+    const replaced = [];
     for (const m of memos.filter((x) => isDiary(x) && isLocked(x.body))) {
       const text = bodyOf(m);
       if (text == null) continue; // made with another password: leave it locked
-      await api.save(m.id, text);
+      const r = await recastPhotos(text, false); // photos: plain copies
+      replaced.push(...r.replaced);
+      await api.save(m.id, r.body);
       vault.plain.delete(m.id);
     }
     for (const m of memos) if (isDiary(m)) pendingSecret.delete(m.id);
     lsSet(DIARY_LOCK_KEY, false);
     memos = await api.list();
     const cur = memos.find((x) => x.id === currentId);
-    if (cur && isDiary(cur)) shownBody = cur.body;
+    if (cur && isDiary(cur)) { shownBody = cur.body; if (replaced.length) setContent(cur.body); }
+    await dropUnused(replaced);
     renderAll();
     flashMeta("일기 잠금을 풀었어");
   }
@@ -1444,7 +1463,7 @@
     });
     g.fillStyle = ink; g.globalAlpha = 0.45; g.font = "400 20px " + css.getPropertyValue("--font");
     g.textAlign = few ? "center" : "left";
-    g.fillText("클라우드 메모 · 이달의 사진", few ? W / 2 : mx, H - 40); g.globalAlpha = 1; g.textAlign = "left";
+    g.fillText("클라우드 메모", few ? W / 2 : mx, H - 40); g.globalAlpha = 1; g.textAlign = "left";
     return new Promise((ok) => c.toBlob(ok, "image/png"));
   }
   // One stamp on the export canvas. The frame's outer box is w×h (circle: w×w; polaroid: + a
@@ -2263,10 +2282,138 @@
   const photoURL = new Map(); // id -> Promise of an object URL ("" when not available yet)
   function photoSrc(id) {
     if (!photoURL.has(id)) {
-      photoURL.set(id, Promise.resolve(api.getImage(id))
-        .then((b) => (b ? URL.createObjectURL(b) : "")).catch(() => ""));
+      photoURL.set(id, Promise.resolve(api.getImage(id)).then(async (b) => {
+        if (b && (await isLockedBlob(b))) { lockedPhotos.add(id); b = await unsealPhoto(b); } // "" while locked
+        return b ? URL.createObjectURL(b) : "";
+      }).catch(() => ""));
     }
     return photoURL.get(id);
+  }
+  // ---------- locked photos ----------
+  // A photo in a locked memo or locked diary is stored encrypted with the secret password: its
+  // bytes are a locked body (same format as a locked memo) holding the picture as a data: URL.
+  // Locking or unlocking a memo copies its photos under new ids in the other form.
+  const LOCKED_IMG = "application/x-cloudmemo-locked";
+  const lockedPhotos = new Set(); // encrypted photos decrypted for showing (forgotten when locking)
+  const photoNeedsLock = (m) => !!m && (isSecret(m) || (isDiary(m) && diaryLocked()));
+  async function isLockedBlob(b) {
+    return !!b && b.size > LOCK_MARKER.length && (await b.slice(0, LOCK_MARKER.length).text()) === LOCK_MARKER;
+  }
+  const blobToDataURL = (b) => new Promise((ok, fail) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result)); r.onerror = () => fail(r.error);
+    r.readAsDataURL(b);
+  });
+  async function sealPhoto(blob, key = vault) {
+    const enc = await api.encrypt(key.pw, key.salt, await blobToDataURL(blob));
+    if (!key.salt) key.salt = saltOf(enc);
+    return new Blob([enc], { type: LOCKED_IMG });
+  }
+  async function unsealPhoto(blob, pw = vault && vault.pw) {
+    if (!pw) return null;
+    try {
+      const url = await api.decrypt(pw, await blob.text());
+      return /^data:image\//.test(url) ? await (await fetch(url)).blob() : null;
+    } catch (e) { return null; }
+  }
+  function forgetLockedPhotos() {
+    for (const id of lockedPhotos) {
+      const p = photoURL.get(id);
+      photoURL.delete(id);
+      if (p) p.then((u) => u && URL.revokeObjectURL(u));
+    }
+    lockedPhotos.clear();
+  }
+  const IMG_REF = /data-img="([0-9a-f]{24})"/g;
+  const photoIds = (body) => [...new Set([...(body || "").matchAll(IMG_REF)].map((x) => x[1]))];
+  // Photo ids any memo uses; null when some locked memo can't be read right now.
+  function photoRefs() {
+    const refs = new Set();
+    for (const m of memos) {
+      const b = bodyOf(m);
+      if (b == null) return null;
+      for (const id of photoIds(b)) refs.add(id);
+    }
+    if (currentId) for (const id of photoIds(serialize())) refs.add(id);
+    return refs;
+  }
+  // Removes old photo copies that no memo uses any more (when every memo can be read).
+  async function dropUnused(ids) {
+    if (!ids.length || typeof api.removeImage !== "function") return;
+    const refs = photoRefs();
+    if (!refs) return; // left for the cleanup in settings
+    for (const id of ids) if (!refs.has(id)) await api.removeImage(id).catch(() => {});
+  }
+  // Gives the photos of a memo body the lock state `lock`: each one in the other form is copied
+  // under a new id and the body points to the copy. o.from/o.key: old password and new key when
+  // the password changes (then locked photos are copied too). Returns { body, replaced: old ids }.
+  async function recastPhotos(body, lock, o = {}) {
+    const ids = photoIds(body), map = new Map();
+    if (!ids.length || !canPhoto() || (lock && !api.lockedPhotos)) return { body, replaced: [] };
+    for (const id of ids) {
+      const raw = await api.getImage(id).catch(() => null);
+      if (!raw) continue; // not on this device and not on Drive (yet): left as it is
+      const was = await isLockedBlob(raw);
+      if (was === lock && !(was && o.from)) continue;
+      const pic = was ? await unsealPhoto(raw, o.from || (vault && vault.pw)) : raw;
+      if (!pic) continue;
+      const nid = newPhotoId();
+      await api.putImage(nid, lock ? await sealPhoto(pic, o.key || vault) : pic);
+      photoURL.set(nid, Promise.resolve(URL.createObjectURL(pic)));
+      if (lock) lockedPhotos.add(nid);
+      map.set(id, nid);
+    }
+    if (!map.size) return { body, replaced: [] };
+    return { body: body.replace(IMG_REF, (x, id) => (map.has(id) ? `data-img="${map.get(id)}"` : x)), replaced: [...map.keys()] };
+  }
+  // Settings → 안 쓰는 사진 정리: encrypts plain photos found in locked memos, then moves photos
+  // that no memo uses (and older than 3 days, so nothing still on its way is touched) to the trash.
+  async function cleanPhotos() {
+    const note = $("ph-clean-note"), btn = $("ph-clean"), say = (t) => { note.textContent = t; };
+    if (typeof api.listImages !== "function") { say("이 PC 앱에서는 아직 못 해. CloudMemo.exe를 새로 받아 줘."); return; }
+    const st = await api.status();
+    if (!st.loggedIn) { say("구글 드라이브에 연결된 상태에서만 정리할 수 있어."); return; }
+    if (memos.some((m) => isLocked(m.body)) && !(await unlockVault())) return;
+    btn.disabled = true;
+    try {
+      await flush();
+      say("동기화하는 중…");
+      api.syncNow();
+      for (let i = 0; i < 60; i++) { await new Promise((r) => setTimeout(r, 500)); if (!(await api.status()).syncing && i > 1) break; }
+      memos = await api.list();
+      await decryptAll();
+      if (!photoRefs()) { say("다른 비밀번호로 잠긴 메모가 있어서 어떤 사진을 쓰는지 다 볼 수 없어. 정리는 건너뛸게."); return; }
+      say("잠긴 메모 속 사진 확인 중…");
+      let sealed = 0;
+      const replaced = [];
+      for (const m of memos.filter((x) => isLocked(x.body) && photoIds(bodyOf(x)).length)) {
+        const r = await recastPhotos(bodyOf(m), true);
+        if (!r.replaced.length) continue;
+        const enc = await encryptFor(r.body);
+        await api.save(m.id, enc);
+        vault.plain.set(m.id, { cipher: enc, text: r.body });
+        if (m.id === currentId) setContent(r.body, enc);
+        sealed += r.replaced.length;
+        replaced.push(...r.replaced);
+      }
+      if (sealed) { memos = await api.list(); await decryptAll(); await dropUnused(replaced); }
+      say("사진 목록 받는 중…");
+      const list = await api.listImages(), refs = photoRefs(), cutoff = Date.now() - 3 * 864e5;
+      if (!refs) return;
+      const unused = list.filter((x) => !refs.has(x.id) && x.t && x.t < cutoff);
+      const fresh = list.filter((x) => !refs.has(x.id) && !(x.t && x.t < cutoff)).length;
+      const sealedNote = sealed ? `잠긴 메모 속 사진 ${sealed}장은 암호화했어. ` : "";
+      const freshNote = fresh ? ` (최근 3일 안에 넣은 ${fresh}장은 두었어)` : "";
+      if (!unused.length) { say(sealedNote + "지울 사진은 없어." + freshNote); return; }
+      const mb = (unused.reduce((a, x) => a + (x.size || 0), 0) / 1048576).toFixed(1);
+      if (!confirm(`어느 메모에도 없는 사진 ${unused.length}장(약 ${mb}MB)을 지울까?\n드라이브에서는 휴지통으로 옮겨져서 30일 안에는 되살릴 수 있어.\n최근 3일 안에 넣은 사진은 건드리지 않아.`)) {
+        say(sealedNote + "정리를 취소했어."); return;
+      }
+      let done = 0;
+      for (const x of unused) { say(`사진 지우는 중… ${done}/${unused.length}`); await api.removeImage(x.id); done++; }
+      say(`${sealedNote}안 쓰는 사진 ${done}장을 드라이브 휴지통으로 옮겼어.${freshNote}`);
+    } catch (e) { say("정리하지 못했어: " + ((e && e.message) || e)); }
+    finally { btn.disabled = false; renderAll(); }
   }
   function hydratePhotos(root) {
     if (root) for (const w of root.querySelectorAll("[data-wx]")) w.contentEditable = "false"; // weather chip: tap for its menu
@@ -2310,7 +2457,10 @@
   function photoBlocked() {
     const m = memos.find((x) => x.id === currentId);
     if (!m) return "메모를 먼저 열어 줘";
-    if (isSecret(m) || (isDiary(m) && diaryLocked())) return "잠긴 메모와 잠긴 일기에는 아직 사진을 넣을 수 없어. 사진 암호화는 다음 단계에서 넣을게.";
+    if (photoNeedsLock(m)) {
+      if (!api.lockedPhotos) return "이 PC 앱은 잠긴 메모에 사진을 넣을 수 없어. CloudMemo.exe를 새로 받아 줘.";
+      if (!vault) return "먼저 잠금을 풀어 줘";
+    }
     return "";
   }
   async function insertPhotos(files, at) {
@@ -2318,7 +2468,7 @@
     if (!files.length || !canPhoto()) return;
     const why = photoBlocked();
     if (why) { alert(why); return; }
-    const memoId = currentId;
+    const memoId = currentId, lock = photoNeedsLock(memos.find((x) => x.id === currentId)); // encrypted copy
     focusEditor(); ensureLines(); fixLines();
     if (at) { sel().removeAllRanges(); sel().addRange(at); }
     let line = inEditor() ? lineOf(sel().anchorNode) : editor.lastElementChild;
@@ -2328,11 +2478,12 @@
       try {
         blob = await shrinkPhoto(f);
         id = newPhotoId();
-        await api.putImage(id, blob);
+        await api.putImage(id, lock ? await sealPhoto(blob) : blob);
       } catch (e) { alert("사진을 넣지 못했어: " + ((e && e.message) || e)); continue; }
       if (currentId !== memoId) return; // switched memo meanwhile
       const url = URL.createObjectURL(blob);
       photoURL.set(id, Promise.resolve(url));
+      if (lock) lockedPhotos.add(id);
       const img = Object.assign(document.createElement("img"), { alt: "사진", src: url });
       img.dataset.img = id;
       // An empty line takes the photo; otherwise it goes on its own line below.
@@ -3321,6 +3472,7 @@
     else if (b.dataset.theme != null) { look.theme = b.dataset.theme; look.accent = ""; saveLook(); }
     else if (b.dataset.accent != null) { look.accent = b.dataset.accent; saveLook(); }
   });
+  $("ph-clean").onclick = cleanPhotos;
   $("wx-q").addEventListener("input", wxSearchInput);
   $("wx-res").addEventListener("click", (e) => { const b = e.target.closest("button[data-wxi]"); if (b) setWxLoc(wxFound[+b.dataset.wxi]); });
   $("wx-cur").addEventListener("click", (e) => { if (e.target.closest("#wx-off")) setWxLoc(null); });

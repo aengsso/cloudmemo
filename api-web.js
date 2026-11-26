@@ -317,7 +317,8 @@
   }
 
   // ---------- photos (same layout as images.go): bytes in IndexedDB, files in "CloudMemo/사진" ----------
-  const IMG_FOLDER = "사진", IMG_PROP = "cmImage", IMG_MAX = 8 << 20;
+  // Photos of locked memos/diaries come already encrypted by the UI (a locked body, LOCKED_IMG type).
+  const IMG_FOLDER = "사진", IMG_PROP = "cmImage", IMG_MAX = 12 << 20, LOCKED_IMG = "application/x-cloudmemo-locked";
   const okImageId = (id) => /^[0-9a-f]{24}$/.test(id);
   let imgDB = null, imgFolderId = "";
   function idb() {
@@ -361,7 +362,7 @@
   }
   async function uploadImage(id, blob) {
     const folder = await imagesFolder();
-    const mime = blob.type || "image/jpeg", ext = { "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif" }[mime] || ".jpg";
+    const mime = blob.type || "image/jpeg", ext = { "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif", [LOCKED_IMG]: ".lock" }[mime] || ".jpg";
     const d = new Date(), p2 = (n) => String(n).padStart(2, "0");
     const name = `사진 ${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())} ${id.slice(0, 6)}${ext}`;
     const b = "cm" + newId();
@@ -371,6 +372,21 @@
     const f = await (await gfetch(`${UPLOAD}/files?uploadType=multipart&fields=id`,
       { method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + b }, body })).json();
     return f.id;
+  }
+  // Every photo file in "CloudMemo/사진" (for the cleanup).
+  async function listRemoteImages() {
+    const folder = await imagesFolder(), out = [];
+    let page = "";
+    do {
+      const q = `'${folder}' in parents and trashed = false`;
+      const r = await (await gfetch(`${API}/files?q=${encodeURIComponent(q)}&pageSize=1000&fields=nextPageToken,files(id,size,createdTime,appProperties)${page ? "&pageToken=" + encodeURIComponent(page) : ""}`)).json();
+      for (const f of r.files || []) {
+        const id = f.appProperties && f.appProperties[IMG_PROP];
+        if (okImageId(id)) out.push({ id, fileId: f.id, size: +f.size || 0, created: Date.parse(f.createdTime) || 0 });
+      }
+      page = r.nextPageToken || "";
+    } while (page);
+    return out;
   }
   // Photos added on this device go up after each sync round.
   async function uploadPendingImages() {
@@ -485,8 +501,44 @@
     async putImage(id, blob) {
       if (!okImageId(id)) throw new Error("잘못된 사진 id");
       if (!blob || !blob.size || blob.size > IMG_MAX) throw new Error("사진이 너무 커");
-      await imgPut(id, { blob, driveId: "" });
+      await imgPut(id, { blob, driveId: "", t: Date.now() });
       requestSync(2000);
+    },
+    lockedPhotos: true, // takes encrypted photos (locked memos and diaries)
+    // Every photo here and on Drive: [{ id, size, t (added, ms), remote }] (same as ListImages in images.go).
+    async listImages() {
+      const all = new Map();
+      const keys = await idbDo("readonly", (st) => st.getAllKeys()).catch(() => []);
+      const recs = await idbDo("readonly", (st) => st.getAll()).catch(() => []);
+      for (let i = 0; i < keys.length; i++) {
+        const rec = recs[i];
+        if (!rec || !okImageId(keys[i])) continue;
+        if (!rec.t) { rec.t = Date.now(); await imgPut(keys[i], rec).catch(() => {}); } // older photos count as new from now on
+        all.set(keys[i], { id: keys[i], size: (rec.blob && rec.blob.size) || 0, t: rec.t, remote: false });
+      }
+      if (token()) {
+        let list;
+        try { list = await listRemoteImages(); } catch (e) { throw new Error("드라이브 사진 목록을 못 받았어: " + (e.message || e)); }
+        for (const r of list) {
+          let x = all.get(r.id);
+          if (!x) { x = { id: r.id, size: r.size, t: r.created, remote: true }; all.set(r.id, x); }
+          x.remote = true;
+          if (r.created && (!x.t || r.created < x.t)) x.t = r.created;
+        }
+      }
+      return [...all.values()];
+    },
+    // Moves a photo to Drive's trash (restorable there for 30 days) and forgets it here.
+    async removeImage(id) {
+      if (!okImageId(id)) throw new Error("잘못된 사진 id");
+      if (token()) {
+        for (let i = 0; i < 5; i++) {
+          const fid = await findImage(id);
+          if (!fid) break;
+          await remote.trash(fid);
+        }
+      }
+      await idbDo("readwrite", (st) => st.delete(id));
     },
     async getImage(id) {
       if (!okImageId(id)) return null;
@@ -498,7 +550,7 @@
         if (!fid) return null;
         const blob = await (await gfetch(`${API}/files/${fid}?alt=media`)).blob();
         if (!blob.size || blob.size > IMG_MAX) return null;
-        await imgPut(id, { blob, driveId: fid }).catch(() => {});
+        await imgPut(id, { blob, driveId: fid, t: Date.now() }).catch(() => {});
         return blob;
       } catch (e) { return null; }
     },
