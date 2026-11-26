@@ -1050,11 +1050,12 @@
   // Thumbnail for one photo with the chosen filter.
   function stampCanvas(img, filter, pal) {
     const out = canvasOf(TW, TH), g = out.getContext("2d");
-    if (filter === "dot") { // pixel art: tiny, palette colors, blown up without smoothing
-      const w = 25, h = 30, d = smallPixels(img, w, h);
+    if (filter === "dot") { // pixel art: the photo's own colors, a little more vivid, blown up without smoothing
+      const w = 32, h = 38, d = smallPixels(img, w, h);
       for (let i = 0; i < d.data.length; i += 4) {
-        const c = pal[nearestIdx(pal, [d.data[i], d.data[i + 1], d.data[i + 2]])];
-        d.data[i] = c[0]; d.data[i + 1] = c[1]; d.data[i + 2] = c[2];
+        const r = d.data[i], gg = d.data[i + 1], b = d.data[i + 2], l = r * 0.3 + gg * 0.59 + b * 0.11;
+        const boost = (v) => Math.max(0, Math.min(255, Math.round((l + (v - l) * 1.25 - 128) * 1.06 + 128)));
+        d.data[i] = boost(r); d.data[i + 1] = boost(gg); d.data[i + 2] = boost(b);
       }
       const s = canvasOf(w, h); s.getContext("2d").putImageData(d, 0, 0);
       g.imageSmoothingEnabled = false;
@@ -1116,7 +1117,7 @@
       try { const u = await photoSrc(s.id); if (u) imgs.set(s.id, await loadImage(u)); } catch (e) {}
     }));
     if (run !== albumRun) return;
-    const pal = album.filter === "orig" ? null : monthPalette([...imgs.values()], album.filter === "dot" ? 12 : 10);
+    const pal = album.filter === "orig" || album.filter === "dot" ? null : monthPalette([...imgs.values()], 10);
     for (const s of list) {
       const im = s.id && imgs.get(s.id), slot = page.querySelector(`[data-day="${s.key}"] .ph`);
       if (!slot) continue;

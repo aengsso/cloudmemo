@@ -598,15 +598,16 @@ section[data-h="tips"] .tips { margin-top: 0; }
 #diary.locked .cal-events { display: none; }
 .ce-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 0 2px 6px; }
 .ce-head .ce-add { font-size: 12.5px; padding: 3px 8px; color: var(--accent); white-space: nowrap; }
-.ce-form { display: grid; gap: 8px; margin: 6px 0 4px; padding: 10px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); }
+.ce-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 6px 0 4px; padding: 10px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); box-sizing: border-box; width: 100%; min-width: 0; }
 .ce-form input { font: inherit; font-size: 14px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; outline: none; }
 .ce-form input:focus { border-color: var(--accent); }
 .ce-form .ce-title { width: 100%; box-sizing: border-box; }
-.ce-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--text); }
-.ce-all { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+/* 종일 on its own line, then the two times sharing the width (the sidebar is narrow). */
+.ce-row { display: grid; gap: 6px; font-size: 13px; color: var(--text); min-width: 0; }
+.ce-all { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; justify-self: start; }
 .ce-all input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
-.ce-times { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
-.ce-times input { padding: 4px 6px; font-size: 13px; }
+.ce-times { display: flex; align-items: center; gap: 4px; color: var(--muted); min-width: 0; }
+.ce-times input { flex: 1 1 0; min-width: 0; width: 0; padding: 4px 4px; font-size: 12.5px; }
 .ce-times.off { opacity: .35; pointer-events: none; }
 .ce-err { margin: 0; min-height: 0; font-size: 12.5px; color: var(--warn); }
 .ce-err:empty { display: none; }
