@@ -6,10 +6,12 @@
   const SCOPE = "https://www.googleapis.com/auth/drive.file";
   // Asked for only after the user turns the calendar on in the diary (same as Go's CalendarScope).
   const CAL_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+  const CAL_WRITE_SCOPE = "https://www.googleapis.com/auth/calendar.events"; // add events (insert only)
   const CAL_API = "https://www.googleapis.com/calendar/v3";
   const K = { memos: "cloudmemo.memos.v1", token: "cloudmemo.token", acct: "cloudmemo.account",
               state: "cloudmemo.oauthState", silentAt: "cloudmemo.silentAt", connected: "cloudmemo.connected",
-              calWant: "cloudmemo.calWant", calOK: "cloudmemo.calGranted" };
+              calWant: "cloudmemo.calWant", calOK: "cloudmemo.calGranted",
+              calWriteWant: "cloudmemo.calWriteWant", calWriteOK: "cloudmemo.calWriteGranted" };
   const FOLDER = "CloudMemo", FOLDER_MIME = "application/vnd.google-apps.folder";
   const API = "https://www.googleapis.com/drive/v3", UPLOAD = "https://www.googleapis.com/upload/drive/v3";
   const FILE_FIELDS = "id,name,modifiedTime,appProperties";
@@ -113,7 +115,8 @@
     ls.set(K.state, state);
     const p = new URLSearchParams({
       client_id: CLIENT_ID, redirect_uri: redirectUri(), response_type: "token",
-      scope: ls.get(K.calWant, false) ? SCOPE + " " + CAL_SCOPE : SCOPE, state, include_granted_scopes: "true",
+      scope: [SCOPE, ls.get(K.calWant, false) && CAL_SCOPE, ls.get(K.calWriteWant, false) && CAL_WRITE_SCOPE].filter(Boolean).join(" "),
+      state, include_granted_scopes: "true",
     });
     const hint = ls.get(K.acct, "");
     if (hint) p.set("login_hint", hint);
@@ -134,7 +137,9 @@
     ls.set(K.token, { access_token: h.get("access_token"), exp: Date.now() + (+h.get("expires_in") || 3600) * 1000 });
     ls.set(K.connected, true);
     // The user may untick the calendar on Google's screen: keep what was really granted.
-    ls.set(K.calOK, (h.get("scope") || "").split(/\s+/).includes(CAL_SCOPE));
+    const granted = (h.get("scope") || "").split(/\s+/);
+    ls.set(K.calOK, granted.includes(CAL_SCOPE));
+    ls.set(K.calWriteOK, granted.includes(CAL_WRITE_SCOPE));
   }
   // Renew an expired token without interaction, at most once per 5 minutes, only when idle.
   function maybeSilentRenew() {
@@ -387,7 +392,8 @@
     login() { startAuth(false); },
     async logout() {
       const t = token();
-      ls.del(K.token); ls.del(K.connected); ls.del(K.acct); ls.del(K.calOK); ls.del(K.calWant);
+      ls.del(K.token); ls.del(K.connected); ls.del(K.acct);
+      for (const k of [K.calOK, K.calWant, K.calWriteOK, K.calWriteWant]) ls.del(k);
       folderId = ""; lastSync = 0; lastError = ""; accountChecked = false;
       resetSync();
       if (t) fetch("https://oauth2.googleapis.com/revoke?token=" + encodeURIComponent(t), { method: "POST" }).catch(() => {});
@@ -395,9 +401,13 @@
     syncNow() { token() ? runSync() : startAuth(false); },
     // Google Calendar (read only) for the diary; same results as calendar.go.
     calendar: {
-      async status() { return { granted: !!ls.get(K.calOK, false) && ls.get(K.connected, false), busy: false }; },
-      connect() { ls.set(K.calWant, true); startAuth(false); },
+      async status() {
+        const on = ls.get(K.connected, false);
+        return { granted: on && !!ls.get(K.calOK, false), canWrite: on && !!ls.get(K.calWriteOK, false), busy: false };
+      },
+      connect(write) { ls.set(K.calWant, true); if (write) ls.set(K.calWriteWant, true); startAuth(false); },
       events: calendarEvents,
+      add: calendarAdd,
     },
     openURL(url) { window.open(url, "_blank", "noopener"); },
   };
@@ -417,6 +427,33 @@
     }
     if (/accessNotConfigured|SERVICE_DISABLED|has not been used|is disabled/.test(why)) throw new Error("구글 캘린더 API가 꺼져 있어 (Cloud 콘솔에서 켜야 해)");
     throw new Error("캘린더 오류: " + (e.message || res.status));
+  }
+  // Same checks as NewEvent.body in calendar.go. Inserting is the only write: no edits, no deletes.
+  async function calendarAdd(n) {
+    const title = Array.from(String(n.title || "").trim()).slice(0, 300).join("");
+    if (!title) throw new Error("일정 제목을 적어줘");
+    const okDay = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s), okTime = (s) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?([+-]\d{2}:\d{2}|Z)$/.test(s);
+    if (!(n.allDay ? okDay(n.start) && okDay(n.end) : okTime(n.start) && okTime(n.end))) throw new Error("시간 형식 오류");
+    if (!(new Date(n.end) > new Date(n.start))) throw new Error("끝나는 시간이 시작보다 뒤여야 해");
+    const at = (s) => (n.allDay ? { date: s } : { dateTime: s });
+    const t = token();
+    if (!t) throw new Error("구글 세션 만료");
+    const res = await fetch(`${CAL_API}/calendars/primary/events?fields=summary,htmlLink`, {
+      method: "POST", headers: { Authorization: "Bearer " + t, "Content-Type": "application/json" },
+      body: JSON.stringify({ summary: title, start: at(n.start), end: at(n.end) }),
+    });
+    if (!res.ok) {
+      let e = {};
+      try { e = (await res.json()).error || {}; } catch (x) {}
+      if (res.status === 401) { ls.del(K.token); throw new Error("구글 세션 만료"); }
+      if (res.status === 403 && /insufficient|PERMISSION/.test((e.message || "") + (e.status || ""))) {
+        ls.set(K.calWriteOK, false);
+        throw new Error("일정 추가 권한이 없어. 다시 연결해줘");
+      }
+      throw new Error("일정 추가 실패: " + (e.message || res.status));
+    }
+    const r = await res.json();
+    return { title: r.summary || title, start: n.start, end: n.end, allDay: !!n.allDay, link: r.htmlLink || "" };
   }
   async function calendarEvents(from, to) {
     const cals = await calGet(`${CAL_API}/users/me/calendarList?minAccessRole=reader&maxResults=50` +

@@ -789,7 +789,8 @@
   // ---------- Google Calendar events on the diary calendar (read only, opt-in) ----------
   const CAL_ON_KEY = "cloudmemo.calOn";
   const calAPI = () => (api.calendar && typeof api.calendar.events === "function" ? api.calendar : null);
-  const cal = { on: !!lsGet(CAL_ON_KEY, false), granted: false, month: "", byDay: new Map(), err: "", loading: false, at: 0 };
+  const cal = { on: !!lsGet(CAL_ON_KEY, false), granted: false, canWrite: false, month: "", byDay: new Map(), err: "", loading: false, at: 0, form: "" };
+  const canAdd = () => !!(calAPI() && typeof api.calendar.add === "function");
   const calShowing = () => !!calAPI() && cal.on && cal.granted;
   // Events grouped by local day ("YYYY-MM-DD"); an event spanning days is listed on each.
   function groupEvents(list) {
@@ -814,6 +815,7 @@
     try {
       const st = await c.status();
       cal.granted = !!(st && st.granted);
+      cal.canWrite = !!(st && st.canWrite);
       if (cal.granted) {
         const list = await c.events(new Date(y, mo, 1).toISOString(), new Date(y, mo + 1, 1).toISOString());
         cal.byDay = groupEvents(list || []);
@@ -856,28 +858,107 @@
     btn.hidden = !calAPI();
     btn.classList.toggle("on", calShowing());
     btn.title = calShowing() ? "구글 캘린더 일정 (켜짐)" : "구글 캘린더 일정 보기";
-    if (!calShowing() || closed) { box.hidden = true; return; }
+    if (!calShowing() || closed) { box.hidden = true; cal.form = ""; return; }
     box.hidden = false;
+    // Don't redraw over a half-filled form (sync re-renders the sidebar every minute).
+    if (cal.form === day && box.querySelector("form.ce-form")) return;
+    if (cal.form && cal.form !== day) cal.form = "";
     const list = cal.byDay.get(day) || [];
     const d = dayOf(day);
-    const head = `<div class="ce-head">${d.getMonth() + 1}월 ${d.getDate()}일 ${WD[d.getDay()]}요일 일정</div>`;
+    const head = `<div class="ce-head"><span>${d.getMonth() + 1}월 ${d.getDate()}일 ${WD[d.getDay()]}요일 일정</span>` +
+      (canAdd() && !cal.form ? `<button class="text-btn ce-add" data-ce="add">＋ 일정 추가</button>` : "") + `</div>`;
     if (cal.err) {
       box.innerHTML = head + `<div class="ce-none err">${esc(cal.err)} <button class="text-btn" data-ce="retry">다시 시도</button></div>`;
-      return;
+    } else {
+      box.innerHTML = head + (list.length ? list.map((e, i) => `
+        <button class="ce" data-ce="${i}" title="${esc(e.calendar || "")}">
+          <i style="background:${esc(e.color || "var(--accent)")}"></i>
+          <span class="ce-t">${e.allDay ? "종일" : esc(timeLabel(e.start))}</span>
+          <span class="ce-n">${esc(e.title)}</span>
+        </button>`).join("") : `<div class="ce-none">${cal.loading ? "불러오는 중…" : "일정 없음"}</div>`) +
+        (cal.form === day ? eventForm(day) : "");
     }
-    box.innerHTML = head + (list.length ? list.map((e, i) => `
-      <button class="ce" data-ce="${i}" title="${esc(e.calendar || "")}">
-        <i style="background:${esc(e.color || "var(--accent)")}"></i>
-        <span class="ce-t">${e.allDay ? "종일" : esc(timeLabel(e.start))}</span>
-        <span class="ce-n">${esc(e.title)}</span>
-      </button>`).join("") : `<div class="ce-none">${cal.loading ? "불러오는 중…" : "일정 없음"}</div>`);
     box.onclick = (ev) => {
       const b = ev.target.closest("[data-ce]");
       if (!b) return;
-      if (b.dataset.ce === "retry") { calLoad(true); return; }
-      const e = list[+b.dataset.ce];
+      const k = b.dataset.ce;
+      if (k === "retry") { calLoad(true); return; }
+      if (k === "add") { openEventForm(day); return; }
+      if (k === "cancel") { cal.form = ""; renderDiary(); return; }
+      const e = list[+k];
       if (e && e.link) openExternal(e.link);
     };
+    const f = box.querySelector("form.ce-form");
+    if (f) wireEventForm(f, day);
+  }
+
+  // ---- adding an event (inserted straight into the main Google Calendar) ----
+  const hm = (dt) => `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  function isoLocal(dt) { // "2026-11-28T15:30:00+09:00"
+    const off = -dt.getTimezoneOffset(), a = Math.abs(off);
+    return `${ymd(dt)}T${hm(dt)}:00${off >= 0 ? "+" : "-"}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
+  }
+  function eventForm(day) {
+    let s = new Date(dayOf(day)); s.setHours(9, 0, 0, 0);
+    if (day === ymd(new Date())) { s = new Date(); s.setMinutes(0, 0, 0); s.setHours(Math.min(s.getHours() + 1, 23)); }
+    const e = new Date(s.getTime() + 3600000);
+    return `<form class="ce-form" autocomplete="off">
+      <input name="t" class="ce-title" placeholder="일정 제목" maxlength="300" aria-label="일정 제목">
+      <div class="ce-row">
+        <label class="ce-all"><input type="checkbox" name="all"> 종일</label>
+        <span class="ce-times"><input type="time" name="s" value="${hm(s)}" aria-label="시작"> ~ <input type="time" name="e" value="${hm(e)}" aria-label="끝"></span>
+      </div>
+      <p class="ce-err" role="alert"></p>
+      <div class="ce-btns"><button type="button" class="text-btn" data-ce="cancel">취소</button><button class="text-btn primary">추가</button></div>
+    </form>`;
+  }
+  function wireEventForm(f, day) {
+    const all = f.elements.all, s = f.elements.s, e = f.elements.e, err = f.querySelector(".ce-err");
+    all.onchange = () => f.querySelector(".ce-times").classList.toggle("off", all.checked);
+    let dur = 60; // keep the length when the start moves
+    const mins = (v) => { const [h, m] = v.split(":").map(Number); return h * 60 + m; };
+    s.onchange = () => { if (s.value) { const t = Math.min(mins(s.value) + dur, 23 * 60 + 59); e.value = `${pad(Math.floor(t / 60))}:${pad(t % 60)}`; } };
+    e.onchange = () => { if (s.value && e.value && mins(e.value) > mins(s.value)) dur = mins(e.value) - mins(s.value); };
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const title = f.elements.t.value.trim();
+      if (!title) { err.textContent = "제목을 적어줘"; f.elements.t.focus(); return; }
+      let start, end;
+      const d0 = dayOf(day);
+      if (all.checked) { const d1 = new Date(d0); d1.setDate(d1.getDate() + 1); start = day; end = ymd(d1); }
+      else {
+        if (!s.value || !e.value) { err.textContent = "시간을 골라줘"; return; }
+        const at = (v) => { const [h, m] = v.split(":").map(Number); const x = new Date(d0); x.setHours(h, m, 0, 0); return x; };
+        const a = at(s.value), b = at(e.value);
+        if (b <= a) { err.textContent = "끝나는 시간이 시작보다 뒤여야 해"; return; }
+        start = isoLocal(a); end = isoLocal(b);
+      }
+      const btn = f.querySelector(".primary");
+      btn.disabled = true; err.textContent = "추가하는 중…";
+      try {
+        await api.calendar.add({ title, allDay: all.checked, start, end });
+        cal.form = "";
+        flashMeta("구글 캘린더에 일정을 추가했어");
+        await calLoad(true);
+      } catch (x) {
+        btn.disabled = false;
+        err.textContent = (x && x.message) || String(x);
+        if (/권한/.test(err.textContent)) cal.canWrite = false;
+      }
+    };
+    if (document.activeElement === document.body || !f.contains(document.activeElement)) f.elements.t.focus();
+  }
+  async function openEventForm(day) {
+    if (!cal.canWrite) {
+      if (!confirm("앱에서 바로 일정을 추가하려면 구글 캘린더 '일정 만들기' 권한이 필요해.\n\n" +
+                   "구글 화면이 열리면 허용해 줘. 앱은 일정을 추가만 하고, 고치거나 지우지 않아.")) return;
+      await flush();
+      api.calendar.connect(true);
+      flashMeta("브라우저에서 구글 캘린더 권한을 허용해 줘");
+      return;
+    }
+    cal.form = day;
+    renderDiary();
   }
 
   // ---------- 📅 add a line to Google Calendar (Google's own "new event" page, no permission needed) ----------
@@ -2459,7 +2540,8 @@
     if (mod && e.shiftKey && e.code === "KeyL") { e.preventDefault(); toggleChecklist(); }
     if (e.key === "F1") { e.preventDefault(); toggleHelp(); return; }
     if (!$("present").hidden || !$("help").hidden) return;
-    if (e.key === "F5" && !mod) { e.preventDefault(); if (currentId) insertNow(); return; }
+    const inField = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).nodeName || "");
+    if (e.key === "F5" && !mod) { e.preventDefault(); if (currentId && !inField) insertNow(); return; }
     if (mod && e.altKey && /^Digit[0-9]$/.test(e.code)) { // Ctrl+Alt+0..9: line type, like Notion
       e.preventDefault();
       setBlock(["p", "h1", "h2", "h3", "todo", "ul", "ol", "toggle", "code", "callout"][+e.code.slice(5)]);

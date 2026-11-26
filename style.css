@@ -523,7 +523,22 @@ section[data-h="tips"] .tips { margin-top: 0; }
 .cal-events { margin-top: 12px; padding: 10px 10px 6px; border-radius: 10px; background: color-mix(in srgb, var(--sel) 45%, transparent); }
 .cal-events[hidden] { display: none; }
 #diary.locked .cal-events { display: none; }
-.ce-head { font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 0 2px 6px; }
+.ce-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); padding: 0 2px 6px; }
+.ce-head .ce-add { font-size: 12.5px; padding: 3px 8px; color: var(--accent); white-space: nowrap; }
+.ce-form { display: grid; gap: 8px; margin: 6px 0 4px; padding: 10px; border-radius: 9px; background: var(--panel); border: 1px solid var(--line); }
+.ce-form input { font: inherit; font-size: 14px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; outline: none; }
+.ce-form input:focus { border-color: var(--accent); }
+.ce-form .ce-title { width: 100%; box-sizing: border-box; }
+.ce-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--text); }
+.ce-all { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+.ce-all input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
+.ce-times { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.ce-times input { padding: 4px 6px; font-size: 13px; }
+.ce-times.off { opacity: .35; pointer-events: none; }
+.ce-err { margin: 0; min-height: 0; font-size: 12.5px; color: var(--warn); }
+.ce-err:empty { display: none; }
+.ce-btns { display: flex; justify-content: flex-end; gap: 6px; }
+.ce-btns .text-btn { font-size: 13px; padding: 5px 12px; }
 .ce { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 4px; border-radius: 7px; font-size: 13.5px; color: var(--text); }
 @media (hover: hover) { .ce:hover { background: var(--sel); } }
 .ce i { flex: none; width: 4px; align-self: stretch; min-height: 16px; border-radius: 2px; }
