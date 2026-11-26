@@ -3300,6 +3300,7 @@
     return box.innerHTML;
   }
   function copyWithPhotos(frag, text) {
+    if (typeof api.clipHTML === "function") return portableHTML(frag).then((h) => api.clipHTML(h, text)); // PC app
     if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem !== "function") return Promise.reject(new Error("no clipboard"));
     return navigator.clipboard.write([new ClipboardItem({
       "text/html": portableHTML(frag).then((h) => new Blob([h], { type: "text/html" })),
@@ -3319,7 +3320,9 @@
   // Blog editors (Naver's among them) drop pictures that come inside pasted text, but take a
   // picture pasted on its own or added as a file. So the entry goes over in pieces: the text in
   // one copy (with [사진 1] where each photo was), then each photo copied alone, or all saved.
-  const canCopyPics = () => !!(navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem === "function");
+  // The PC app's window has no browser clipboard API: it copies through Go (api.clipImage / clipHTML).
+  const webClip = () => !!(navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem === "function");
+  const canCopyPics = () => typeof api.clipImage === "function" || webClip();
   const photoBlob = async (id) => { const u = await photoSrc(id); if (!u) throw new Error("사진을 못 불러왔어"); return (await fetch(u)).blob(); };
   async function asPNG(blob) { // the one picture type every clipboard takes
     if (blob.type === "image/png") return blob;
@@ -3331,7 +3334,8 @@
   }
   // Called straight from a tap: the clipboard only takes a write that starts in one.
   function copyPhoto(id) {
-    if (!canCopyPics()) return Promise.reject(new Error("이 브라우저는 사진 복사를 못 해"));
+    if (typeof api.clipImage === "function") return photoBlob(id).then(asPNG).then((b) => api.clipImage(b));
+    if (!webClip()) return Promise.reject(new Error("이 브라우저는 사진 복사를 못 해"));
     return navigator.clipboard.write([new ClipboardItem({ "image/png": photoBlob(id).then(asPNG) })]);
   }
   // The entry's text with formatting, each photo turned into "[사진 N]".
@@ -3397,7 +3401,8 @@
       if (a.dataset.a === "text") {
         const p = blogPieces();
         try {
-          if (canCopyPics()) await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([p.html], { type: "text/html" }), "text/plain": new Blob([p.text], { type: "text/plain" }) })]);
+          if (typeof api.clipHTML === "function") await api.clipHTML(p.html, p.text);
+          else if (webClip()) await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([p.html], { type: "text/html" }), "text/plain": new Blob([p.text], { type: "text/plain" }) })]);
           else await navigator.clipboard.writeText(p.text);
           say("글을 복사했어. 블로그에 붙여 넣어 줘.");
         } catch (x) { say("글을 복사하지 못했어."); }
