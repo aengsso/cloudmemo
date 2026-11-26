@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keepsake</title>
+<meta name="description" content="Keepsake는 메모와 일기를 내 Google 드라이브에 저장하는 앱입니다.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@400;600&display=swap">
+<style>
+  :root { --paper: #eef2f7; --card: #ffffff; --ink: #1c2436; --muted: #5d6679; --line: #d9dfea; --blue: #24489a; --red: #c8372d; }
+  @media (prefers-color-scheme: dark) {
+    :root { --paper: #151a22; --card: #1d2431; --ink: #e8ecf4; --muted: #9aa3b5; --line: #2e3748; --blue: #8aa6ec; --red: #e0625a; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 16px 48px; background: var(--paper); color: var(--ink);
+    font: 16px/1.7 -apple-system, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  }
+  /* the page is one airmail letter */
+  .env {
+    max-width: 680px; margin: 0 auto; padding: 9px; border-radius: 10px;
+    background: repeating-linear-gradient(135deg, var(--red) 0 14px, var(--card) 14px 21px, var(--blue) 21px 35px, var(--card) 35px 42px);
+    box-shadow: 0 18px 40px rgba(20, 30, 60, .12);
+  }
+  .letter { background: var(--card); border-radius: 4px; padding: 36px 32px 32px; }
+  header { display: flex; gap: 20px; align-items: center; }
+  header img { width: 84px; height: 84px; border-radius: 16px; transform: rotate(-4deg); flex: none; }
+  h1 { font-family: "Hahmlet", "Batang", serif; font-weight: 600; font-size: 40px; line-height: 1.1; margin: 0 0 6px; }
+  .lead { margin: 0; color: var(--muted); font-size: 17px; }
+  .open {
+    display: inline-block; margin-top: 26px; padding: 12px 28px; border-radius: 8px;
+    background: var(--blue); color: #fff; font-weight: 600; text-decoration: none;
+  }
+  @media (prefers-color-scheme: dark) { .open { color: #151a22; } }
+  .open:focus-visible, a:focus-visible { outline: 3px solid var(--red); outline-offset: 2px; }
+  h2 { font-family: "Hahmlet", "Batang", serif; font-weight: 600; font-size: 21px; margin: 36px 0 10px; padding-top: 24px; border-top: 1px dashed var(--line); }
+  ul { margin: 0; padding-left: 1.2em; }
+  li { margin: 6px 0; }
+  li::marker { color: var(--red); }
+  p { margin: 0 0 10px; }
+  code { font-size: .92em; background: var(--paper); padding: 1px 6px; border-radius: 4px; }
+  a { color: var(--blue); }
+  footer { margin-top: 32px; padding-top: 18px; border-top: 1px dashed var(--line); color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  @media (max-width: 480px) {
+    .letter { padding: 28px 20px 24px; }
+    header { flex-direction: column; align-items: flex-start; gap: 14px; }
+    h1 { font-size: 34px; }
+  }
+</style>
+</head>
+<body>
+<main class="env">
+  <div class="letter">
+    <header>
+      <img src="icon-192.png" alt="Keepsake 아이콘">
+      <div>
+        <h1>Keepsake</h1>
+        <p class="lead">메모와 일기를 내 Google 드라이브에 간직하는 앱</p>
+      </div>
+    </header>
+    <a class="open" href="./">Keepsake 열기</a>
+
+    <h2>무엇을 하나요</h2>
+    <ul>
+      <li>메모를 쓰고 폴더로 정리합니다. 아이폰, 컴퓨터 어디서 써도 같은 메모가 보입니다.</li>
+      <li>하루 한 편 일기를 쓰고, 그날의 날씨와 사진을 함께 남깁니다.</li>
+      <li>한 달 동안 일기에 넣은 사진을 우표, 티켓, 스테인드글라스 같은 모양의 앨범 한 장으로 모아 저장합니다.</li>
+      <li>비밀번호로 잠근 메모와 일기는 기기 안에서 암호화한 뒤 저장합니다.</li>
+    </ul>
+
+    <h2>Google 계정으로 하는 일</h2>
+    <p>Keepsake는 메모와 일기를 사용자 본인의 Google 드라이브에 저장하고 불러오기 위해 Google 계정에 로그인합니다.
+      요청하는 권한은 <code>drive.file</code> 하나로, Keepsake가 직접 만든 파일만 읽고 쓸 수 있으며 드라이브의 다른 파일은 볼 수 없습니다.</p>
+    <p>일기에서 구글 캘린더 연결을 직접 켠 경우에만 그날의 일정을 읽어 보여 주고, 사용자가 추가한 일정을 캘린더에 넣습니다.</p>
+    <p>Keepsake는 별도 서버가 없습니다. 메모와 일기는 사용자의 기기와 Google 드라이브에만 있고, 개발자를 포함한 누구에게도 보내지 않습니다.</p>
+
+    <footer>
+      <a href="privacy.html">개인정보처리방침</a>
+      <a href="https://github.com/aengsso/cloudmemo">GitHub</a>
+      <span>예전 이름은 CloudMemo였습니다.</span>
+    </footer>
+  </div>
+</main>
+</body>
+</html>
