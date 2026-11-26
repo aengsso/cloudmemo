@@ -609,8 +609,48 @@
       };
     });
   }
-  function askFolderName(initial) {
-    const v = prompt(initial ? "폴더 새 이름" : "새 폴더 이름", initial || "");
+  // The app's own question box, in place of the browser's prompt / confirm / alert (those show the
+  // page's address as their title and look nothing like the app). o: { title, note, input, ok,
+  // cancel (false: no cancel button), danger, check(value) → error message or "" }.
+  // Resolves to the typed text (input), true (ok) or null (cancelled).
+  function askDialog(o) {
+    return new Promise((resolve) => {
+      const box = $("ask"), form = $("ask-form"), inp = $("ask-input"), err = $("ask-err");
+      const ok = $("ask-ok"), cancel = $("ask-cancel"), back = document.activeElement;
+      $("ask-title").textContent = o.title || "";
+      $("ask-note").textContent = o.note || "";
+      const typed = o.input != null;
+      inp.hidden = !typed; inp.value = typed ? o.input : ""; inp.placeholder = o.placeholder || "";
+      err.textContent = "";
+      ok.textContent = o.ok || "확인"; ok.classList.toggle("danger", !!o.danger);
+      cancel.hidden = o.cancel === false; cancel.textContent = o.cancel || "취소";
+      box.hidden = false;
+      setTimeout(() => { if (typed) { inp.focus(); inp.select(); } else ok.focus(); }, 30);
+      const done = (v) => {
+        box.hidden = true; form.onsubmit = null; cancel.onclick = null; box.onmousedown = null; box.onkeydown = null;
+        if (back && back.focus && document.contains(back)) back.focus({ preventScroll: true });
+        resolve(v);
+      };
+      cancel.onclick = () => done(null);
+      box.onmousedown = (e) => { if (e.target === box && o.cancel !== false) done(null); };
+      box.onkeydown = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(o.cancel === false ? true : null); } };
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        if (!typed) { done(true); return; }
+        const msg = o.check ? await o.check(inp.value) : "";
+        if (msg) { err.textContent = msg; inp.select(); return; }
+        done(inp.value);
+      };
+    });
+  }
+  const askConfirm = (title, note, opt) => askDialog({ title, note, ...(opt || {}) }).then((v) => v === true);
+  const askAlert = (title, note) => askDialog({ title, note, cancel: false });
+  async function askFolderName(initial) {
+    const v = await askDialog({
+      title: initial ? "폴더 이름 바꾸기" : "새 폴더", input: initial || "", placeholder: "폴더 이름",
+      ok: initial ? "바꾸기" : "만들기",
+      check: (s) => (cleanFolder(s) ? "" : "이름을 적어 줘"),
+    });
     return v == null ? "" : cleanFolder(v);
   }
   function rememberFolder(name) {
@@ -620,13 +660,13 @@
     extraFolders = extraFolders.filter((f) => f !== name); lsSet(FOLDERS_KEY, extraFolders);
   }
   async function addFolder() {
-    const name = askFolderName();
+    const name = await askFolderName();
     if (!name) return;
     rememberFolder(name);
     setFilter(name);
   }
   async function renameFolder(old) {
-    const name = askFolderName(old);
+    const name = await askFolderName(old);
     if (!name || name === old) return;
     await flush();
     for (const m of memos.filter((x) => x.folder === old)) await api.setFolder(m.id, name);
@@ -637,7 +677,7 @@
   }
   async function deleteFolder(old) {
     const inside = memos.filter((x) => x.folder === old);
-    if (!confirm(`"${old}" 폴더를 지울까?` + (inside.length ? `\n안에 있는 메모 ${inside.length}개는 지워지지 않고 폴더 밖으로 옮겨져.` : ""))) return;
+    if (!(await askConfirm(`"${old}" 폴더를 지울까?`, inside.length ? `안에 있는 메모 ${inside.length}개는 지워지지 않고 폴더 밖으로 옮겨져.` : "", { ok: "지우기", danger: true }))) return;
     await flush();
     for (const m of inside) await api.setFolder(m.id, "");
     forgetFolder(old);
@@ -745,7 +785,7 @@
   };
   async function lockDiaryOn() {
     if (!(await unlockVault())) return;
-    if (!confirm("일기를 모두 비밀번호로 잠글까?\n비밀 폴더와 같은 비밀번호를 써. 비밀번호를 잊으면 일기를 되살릴 수 없어.")) return;
+    if (!(await askConfirm("일기를 모두 잠글까?", "비밀 폴더와 같은 비밀번호를 써. 비밀번호를 잊으면 일기를 되살릴 수 없어.", { ok: "잠그기" }))) return;
     await flush();
     const replaced = [];
     for (const m of memos.filter((x) => isDiary(x) && !isLocked(x.body) && plain(x.body).trim())) {
@@ -765,7 +805,7 @@
     flashMeta("일기를 잠갔어");
   }
   async function lockDiaryOff() {
-    if (!vault || !confirm("일기 잠금을 풀까? 일기가 다시 암호화 없이 저장돼.")) return;
+    if (!vault || !(await askConfirm("일기 잠금을 풀까?", "일기가 다시 암호화 없이 저장돼.", { ok: "풀기" }))) return;
     await flush();
     const replaced = [];
     for (const m of memos.filter((x) => isDiary(x) && isLocked(x.body))) {
@@ -897,8 +937,8 @@
     cal.on = true; lsSet(CAL_ON_KEY, true);
     const st = await c.status();
     if (st && st.granted) { cal.granted = true; calLoad(true); return; }
-    if (!confirm("구글 캘린더 일정을 일기 달력에 같이 보여줄까?\n\n구글 로그인 화면이 열리면 '캘린더 보기' 권한을 허용해 줘. " +
-                 "'확인되지 않은 앱' 화면이 나오면 고급 → Keepsake(또는 CloudMemo)(으)로 이동을 누르면 돼.\n일정은 읽기만 하고 바꾸지 않아.")) {
+    if (!(await askConfirm("구글 캘린더 일정을 같이 볼까?", "구글 로그인 화면이 열리면 '캘린더 보기' 권한을 허용해 줘. " +
+                 "'확인되지 않은 앱' 화면이 나오면 고급 → Keepsake(또는 CloudMemo)(으)로 이동을 누르면 돼.\n일정은 읽기만 하고 바꾸지 않아.", { ok: "연결하기" }))) {
       cal.on = false; lsSet(CAL_ON_KEY, false); renderDiary(); return;
     }
     await flush();
@@ -1013,8 +1053,8 @@
   }
   async function openEventForm(day) {
     if (!cal.canWrite) {
-      if (!confirm("앱에서 바로 일정을 추가하려면 구글 캘린더 '일정 만들기' 권한이 필요해.\n\n" +
-                   "구글 화면이 열리면 허용해 줘. 앱은 일정을 추가만 하고, 고치거나 지우지 않아.")) return;
+      if (!(await askConfirm("일정 추가 권한이 필요해", "앱에서 바로 일정을 추가하려면 구글 캘린더 '일정 만들기' 권한이 필요해.\n" +
+                   "구글 화면이 열리면 허용해 줘. 앱은 일정을 추가만 하고, 고치거나 지우지 않아.", { ok: "권한 받기" }))) return;
       await flush();
       api.calendar.connect(true);
       flashMeta("브라우저에서 구글 캘린더 권한을 허용해 줘");
@@ -2163,7 +2203,7 @@
         setTimeout(() => URL.revokeObjectURL(a.href), 60000);
         flashMeta("이미지를 저장했어 (다운로드 폴더)");
       }
-    } catch (e) { alert("이미지를 만들지 못했어: " + ((e && e.message) || e)); }
+    } catch (e) { askAlert("이미지를 만들지 못했어", String((e && e.message) || e)); }
     finally { btn.disabled = false; btn.textContent = label; }
   }
 
@@ -3230,7 +3270,7 @@
       const freshNote = fresh ? ` (최근 3일 안에 넣은 ${fresh}장은 두었어)` : "";
       if (!unused.length) { say(sealedNote + "지울 사진은 없어." + freshNote); return; }
       const mb = (unused.reduce((a, x) => a + (x.size || 0), 0) / 1048576).toFixed(1);
-      if (!confirm(`어느 메모에도 없는 사진 ${unused.length}장(약 ${mb}MB)을 지울까?\n드라이브에서는 휴지통으로 옮겨져서 30일 안에는 되살릴 수 있어.\n최근 3일 안에 넣은 사진은 건드리지 않아.`)) {
+      if (!(await askConfirm(`안 쓰는 사진 ${unused.length}장(약 ${mb}MB)을 지울까?`, "어느 메모에도 없는 사진이야. 드라이브에서는 휴지통으로 옮겨져서 30일 안에는 되살릴 수 있어.\n최근 3일 안에 넣은 사진은 건드리지 않아.", { ok: "지우기", danger: true }))) {
         say(sealedNote + "정리를 취소했어."); return;
       }
       let done = 0;
@@ -3239,6 +3279,55 @@
     } catch (e) { say("정리하지 못했어: " + ((e && e.message) || e)); }
     finally { btn.disabled = false; renderAll(); }
   }
+  // ---------- copying out (a blog, a chat, a mail) ----------
+  // On screen a photo's src is an object URL only this page can open, so pasted elsewhere it is a
+  // broken picture. Copying puts a version on the clipboard with each photo inside it (a data:
+  // URL) and without the app's own attributes; the browser's own copy stays as the fallback.
+  async function portableHTML(frag) {
+    const box = document.createElement("div");
+    box.appendChild(frag);
+    for (const img of [...box.querySelectorAll("img[data-img]")]) {
+      const u = await photoSrc(img.dataset.img);
+      if (!u) { img.remove(); continue; }
+      const pic = document.createElement("img");
+      pic.src = await blobToDataURL(await (await fetch(u)).blob());
+      pic.alt = "";
+      img.replaceWith(pic);
+    }
+    for (const el of box.querySelectorAll("*")) {
+      for (const a of [...el.attributes]) if (a.name.startsWith("data-") || a.name === "contenteditable" || a.name === "class") el.removeAttribute(a.name);
+    }
+    return box.innerHTML;
+  }
+  function copyWithPhotos(frag, text) {
+    if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem !== "function") return Promise.reject(new Error("no clipboard"));
+    return navigator.clipboard.write([new ClipboardItem({
+      "text/html": portableHTML(frag).then((h) => new Blob([h], { type: "text/html" })),
+      "text/plain": new Blob([text], { type: "text/plain" }),
+    })]);
+  }
+  editor.addEventListener("copy", copyOut);
+  editor.addEventListener("cut", copyOut);
+  function copyOut() {
+    const s = sel();
+    if (!s.rangeCount || s.isCollapsed) return;
+    const frag = s.getRangeAt(0).cloneContents();
+    if (!frag.querySelector || !frag.querySelector("img[data-img]")) return; // no photos: the browser's copy is fine
+    copyWithPhotos(frag, s.toString()).catch(() => {});
+  }
+  // ⋯ → 사진까지 전체 복사: the whole memo or diary entry, for pasting into a blog.
+  async function copyWhole() {
+    if (!currentId) return;
+    const frag = document.createDocumentFragment();
+    for (const n of editor.childNodes) frag.appendChild(n.cloneNode(true));
+    const text = linesOf(editor).join("\n");
+    try {
+      flashMeta("복사하는 중…");
+      await copyWithPhotos(frag, text);
+      flashMeta("복사했어. 블로그 글쓰기 화면에 붙여넣기 해 줘");
+    } catch (e) { flashMeta("복사하지 못했어"); }
+  }
+  const COPY_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`;
   function hydratePhotos(root) {
     if (root) for (const w of root.querySelectorAll("[data-wx]")) w.contentEditable = "false"; // weather chip: tap for its menu
     if (!canPhoto() || !root) return;
@@ -3302,7 +3391,7 @@
     files = [...(files || [])].filter((f) => f && /^image\//.test(f.type));
     if (!files.length || !canPhoto()) return;
     const why = photoBlocked();
-    if (why) { alert(why); return; }
+    if (why) { askAlert("사진을 넣을 수 없어", why); return; }
     const memoId = currentId, lock = photoNeedsLock(memos.find((x) => x.id === currentId)); // encrypted copy
     focusEditor(); ensureLines(); fixLines();
     if (at) { sel().removeAllRanges(); sel().addRange(at); }
@@ -3314,7 +3403,7 @@
         blob = await photoForMemo(f);
         id = newPhotoId();
         await api.putImage(id, lock ? await sealPhoto(blob) : blob);
-      } catch (e) { alert("사진을 넣지 못했어: " + ((e && e.message) || e)); continue; }
+      } catch (e) { askAlert("사진을 넣지 못했어", String((e && e.message) || e)); continue; }
       if (currentId !== memoId) return; // switched memo meanwhile
       const url = URL.createObjectURL(blob);
       photoURL.set(id, Promise.resolve(url));
@@ -3711,7 +3800,7 @@
     // The presenter window stays windowed so the audience window can sit on the projector.
     if (pres.ownFullscreen) { pres.ownFullscreen = false; if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); }
     const w = window.open("", "cloudmemo-audience", "popup,width=1024,height=640");
-    if (!w) { alert("발표 화면 창이 막혔어. 주소창 오른쪽의 팝업 차단 아이콘에서 허용해줘."); return; }
+    if (!w) { askAlert("발표 화면 창이 막혔어", "주소창 오른쪽의 팝업 차단 아이콘에서 허용해 줘."); return; }
     const d = w.document;
     d.open();
     d.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>발표 화면 - Keepsake</title>` +
@@ -3884,6 +3973,7 @@
       { html: menuRow(menuIcon("btn-font"), "화면 글자 크기", ZOOM[fsIndex].n),
         onPick: () => openMenu(anchor, ZOOM.map((z, i) => ({ label: z.n, checked: i === fsIndex, onPick: () => setZoom(i) }))) },
       { html: menuRow(menuIcon("btn-present"), "발표 모드"), onPick: startPresent },
+      { html: menuRow(COPY_ICON, "사진까지 전체 복사"), onPick: copyWhole },
       "-",
       { html: menuRow(menuIcon("btn-delete"), "삭제"), danger: true, onPick: deleteCurrent },
     ]));
@@ -3907,7 +3997,7 @@
       { label: "폴더 없음", checked: !cur, onPick: () => moveCurrent("") },
       ...folderNames().map((n) => ({ label: n, checked: cur === n, onPick: () => moveCurrent(n) })),
       "-",
-      { label: "새 폴더…", onPick: () => { const n = askFolderName(); if (n) moveCurrent(n); } },
+      { label: "새 폴더…", onPick: async () => { const n = await askFolderName(); if (n) moveCurrent(n); } },
       { html: `${LOCK_ICON(false)} 비밀 폴더로 옮기기`, onPick: moveToSecret },
     ]);
   }
@@ -3988,7 +4078,7 @@
   async function select(id) {
     if (id === currentId) { if (narrow()) showEditor(); return; }
     const target = memos.find((x) => x.id === id);
-    if (target && bodyOf(target) == null) { alert("다른 비밀번호로 잠긴 메모라서 지금 비밀번호로는 열 수 없어."); return; }
+    if (target && bodyOf(target) == null) { askAlert("이 메모는 열 수 없어", "다른 비밀번호로 잠긴 메모라서 지금 비밀번호로는 열 수 없어."); return; }
     await leaveCurrent();
     currentId = id;
     const m = memos.find((x) => x.id === id);
@@ -4019,7 +4109,7 @@
   async function deleteCurrent() {
     const m = memos.find((x) => x.id === currentId);
     if (!m) return;
-    if (plain(textOf(m)).trim() && !confirm(`"${title(textOf(m))}" 메모를 삭제할까?`)) return;
+    if (plain(textOf(m)).trim() && !(await askConfirm(`"${title(textOf(m))}" 메모를 삭제할까?`, "드라이브에서는 휴지통으로 옮겨져.", { ok: "삭제", danger: true }))) return;
     clearTimeout(saveTimer);
     await api.remove(m.id);
     memos = memos.filter((x) => x.id !== m.id);
@@ -4352,7 +4442,7 @@
   $("f-photo").hidden = !canPhoto();
   $("f-photo").onclick = () => {
     const why = photoBlocked();
-    if (why) { alert(why); return; }
+    if (why) { askAlert("사진을 넣을 수 없어", why); return; }
     $("photo-input").click();
   };
   $("photo-input").onchange = (e) => { const fs = [...e.target.files]; e.target.value = ""; insertPhotos(fs); };
@@ -4592,7 +4682,7 @@
   $("f-outdent").onclick = () => indent(-1);
   $("btn-login").onclick = () => { api.login(); setTimeout(renderStatus, 100); };
   $("btn-logout").onclick = async () => {
-    if (confirm("구글 드라이브 연결을 해제할까? 메모는 이 기기에 남아.")) { await api.logout(); renderStatus(); }
+    if (await askConfirm("구글 드라이브 연결을 해제할까?", "메모는 이 기기에 남아.", { ok: "해제" })) { await api.logout(); renderStatus(); }
   };
   $("btn-sync").onclick = async () => { await flush(); api.syncNow(); setTimeout(renderStatus, 100); };
   document.addEventListener("keydown", (e) => {

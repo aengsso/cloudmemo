@@ -779,6 +779,18 @@ section[data-h="tips"] .tips { margin-top: 0; }
 .sheet input:focus { border-color: var(--accent); }
 .sheet input[hidden] { display: none; }
 #pw-err { color: var(--warn); min-height: 1em; }
+/* In-app question / notice / name box (in place of the browser's own prompt, confirm and alert). */
+#ask { z-index: 100; }
+.sheet.ask { position: relative; overflow: hidden; padding-top: 26px; }
+.sheet.ask::before, #pw-form::before { /* a thin airmail edge, like the sidebar's */
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px;
+  background: repeating-linear-gradient(135deg, var(--accent-2) 0 9px, transparent 9px 14px, var(--accent) 14px 23px, transparent 23px 28px);
+}
+#pw-form { position: relative; overflow: hidden; padding-top: 26px; }
+.sheet.ask p#ask-note { white-space: pre-line; font-size: 13.5px; }
+.sheet.ask p#ask-note:empty, #ask-err:empty { display: none; }
+#ask-err { color: var(--warn); font-size: 12.5px; }
+.text-btn.primary.danger, .text-btn.primary.danger:hover { background: var(--warn); color: #fff; }
 .sheet-btns { display: flex; justify-content: flex-end; gap: 8px; }
 .sheet-btns .text-btn { font-size: 14px; padding: 7px 14px; }
 

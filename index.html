@@ -19,7 +19,7 @@
 <!--WEB-ONLY-END-->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@400;600&display=swap">
-<link rel="stylesheet" href="style.css?v=96">
+<link rel="stylesheet" href="style.css?v=98">
 </head>
 <body>
 <div id="app" class="show-list">
@@ -372,10 +372,22 @@
     </div>
   </form>
 </div>
+<div id="ask" class="overlay" hidden>
+  <form id="ask-form" class="sheet ask" role="dialog" aria-modal="true" aria-labelledby="ask-title" aria-describedby="ask-note" autocomplete="off">
+    <h2 id="ask-title"></h2>
+    <p id="ask-note"></p>
+    <input id="ask-input" type="text" autocomplete="off" aria-labelledby="ask-title">
+    <p id="ask-err" role="alert"></p>
+    <div class="sheet-btns">
+      <button type="button" id="ask-cancel" class="text-btn">취소</button>
+      <button type="submit" id="ask-ok" class="text-btn primary">확인</button>
+    </div>
+  </form>
+</div>
 <!--WEB-ONLY-START-->
-<script src="config.js?v=96"></script>
-<script src="api-web.js?v=96"></script>
+<script src="config.js?v=98"></script>
+<script src="api-web.js?v=98"></script>
 <!--WEB-ONLY-END-->
-<script src="app.js?v=96"></script>
+<script src="app.js?v=98"></script>
 </body>
 </html>
