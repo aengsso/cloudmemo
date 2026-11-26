@@ -978,7 +978,57 @@
 
   // ---------- 이달의 사진: one stamp per day, the day's cover photo (diary only) ----------
   const ALBUM_KEY = "cloudmemo.album";
-  const album = Object.assign({ shape: "stamp", filter: "orig", empty: true, bg: "white", font: "postmark" }, lsGet(ALBUM_KEY, {}));
+  // pmCenter: the postmark's middle — "" = a little cloud, "{days}" = "13 DAYS", else the user's text.
+  const album = Object.assign({ shape: "stamp", filter: "orig", empty: true, bg: "white", font: "postmark", pmCenter: "" }, lsGet(ALBUM_KEY, {}));
+  const CLOUD_PATH = "M-9 6h18a6 6 0 0 0 .6-12A8.5 8.5 0 0 0-6-8.4 6 6 0 0 0-9 6z"; // ~24×14, centred on 0,0
+  const pmCenterText = (days) => (album.pmCenter === "{days}" ? `${days} DAYS` : String(album.pmCenter || "").toUpperCase());
+  // Postmark ink: the theme's accent color, so it changes with the theme.
+  function pmInkRGB() {
+    const g = canvasOf(1, 1).getContext("2d");
+    g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#3b4a7a";
+    g.fillRect(0, 0, 1, 1);
+    return [...g.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+  }
+  // Text with emoji, printed in one ink color like a rubber stamp: the outline in full ink, light
+  // areas as a soft tone, dark parts (eyes, mouth) dark. Returns a canvas `px` tall-ish.
+  const hasEmoji = (s) => /\p{Extended_Pictographic}/u.test(s || "");
+  function inkPicture(text, px, rgb) {
+    const font = `700 ${px}px ${PM_FONT}`, pad = Math.round(px * 0.2);
+    const m = canvasOf(1, 1).getContext("2d"); m.font = font;
+    const w = Math.ceil(m.measureText(text).width) + pad * 2, h = Math.ceil(px * 1.25) + pad * 2;
+    const cv = canvasOf(w, h), g = cv.getContext("2d", { willReadFrequently: true });
+    g.font = font; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillStyle = `rgb(${rgb.join(",")})`; g.fillText(text, w / 2, h / 2 + px * 0.04);
+    const img = g.getImageData(0, 0, w, h), s = img.data, A = new Float32Array(w * h);
+    for (let p = 0; p < w * h; p++) A[p] = s[p * 4 + 3] / 255;
+    const r = Math.max(1, Math.round(px / 48)); // outline thickness
+    const out = (x, y) => x < 0 || y < 0 || x >= w || y >= h || A[y * w + x] < 0.35;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const p = y * w + x, i = p * 4, a = A[p];
+      if (!a) continue;
+      const l = (s[i] * 0.3 + s[i + 1] * 0.59 + s[i + 2] * 0.11) / 255;
+      const edge = out(x - r, y) || out(x + r, y) || out(x, y - r) || out(x, y + r) ||
+                   out(x - r, y - r) || out(x + r, y + r) || out(x - r, y + r) || out(x + r, y - r);
+      // Three flat tones (like a carved stamp) keep small details crisp instead of a smudgy gradient.
+      const tone = edge || l < 0.42 ? 1 : l < 0.72 ? 0.5 : 0.18;
+      s[i] = rgb[0]; s[i + 1] = rgb[1]; s[i + 2] = rgb[2]; s[i + 3] = Math.round(255 * (a > 0.5 ? 1 : a * 2) * tone);
+    }
+    g.putImageData(img, 0, 0);
+    // Trim to the inked area, so centring the picture centres what you see (an emoji's glyph box
+    // has more room below it than above).
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (s[(y * w + x) * 4 + 3] > 12) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    }
+    if (x1 < 0) return cv;
+    const m2 = 2, cw = x1 - x0 + 1 + m2 * 2, ch = y1 - y0 + 1 + m2 * 2, trimmed = canvasOf(cw, ch);
+    trimmed.getContext("2d", { willReadFrequently: true }).drawImage(cv, x0 - m2, y0 - m2, cw, ch, 0, 0, cw, ch);
+    return trimmed;
+  }
+  // Only emoji (1–3 of them): drawn big in the middle, like a picture stamp.
+  const emojiOnly = (s) => !!s && [...s].length <= 6 && /^(\p{Extended_Pictographic}|️|‍|\p{Emoji_Modifier}|\s)+$/u.test(s);
+  // Hangul in the postmark: Special Elite has none, so a fixed-width gothic like a typewriter.
+  const PM_FONT = '"Special Elite", "Nanum Gothic Coding", monospace';
   if (album.bg !== "white" && album.bg !== "theme") album.bg = "white"; // the paper background was dropped
   if (album.filter === "dot") album.filter = "pixel"; // older dot look
   if (album.filter === "bead" || album.filter === "stitch") album.filter = "halftone"; // folded into 망점
@@ -1001,25 +1051,94 @@
       "&family=Special+Elite&family=Hahmlet:wght@300;500&family=Caveat:wght@600&family=Josefin+Sans:wght@400" +
       "&text=" + encodeURIComponent("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz월.— ") + "&display=swap";
     document.head.appendChild(link);
+    // Hangul for the postmark's middle text (Google sends only the slices a page uses).
+    document.head.appendChild(Object.assign(document.createElement("link"), {
+      rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Nanum+Gothic+Coding:wght@700&display=swap" }));
   }
-  function headerHTML(y, mo) {
+  function headerHTML(y, mo, days) {
     const en = MONTH_EN[mo], ab = en.slice(0, 3);
     switch (album.font) {
       case "editorial": return `<div class="al-head h-ed"><span class="yr">${y}</span><b>${en}</b></div>`;
       case "bignum": return `<div class="al-head h-big"><b>${mo + 1}</b><span>${en.toUpperCase()}<br>${y}</span></div>`;
-      case "postmark": return `<div class="al-head h-pm"><svg viewBox="0 0 132 80" width="132" height="80" aria-label="${y}년 ${mo + 1}월">
-          <g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="40" cy="40" r="35"/><circle cx="40" cy="40" r="26"/>
-          <path d="M80 28q7-5 14 0t14 0t14 0M80 40q7-5 14 0t14 0t14 0M80 52q7-5 14 0t14 0t14 0"/></g>
-          <text x="40" y="38" text-anchor="middle" font-size="13">${ab.toUpperCase()}</text>
-          <text x="40" y="52" text-anchor="middle" font-size="11">${y}</text></svg></div>`;
+      case "postmark": { // like a real rubber-stamp cancellation: month on top, year below, your text (or a cloud) inside
+        const waves = [26, 40, 54, 68, 82].map((wy) => `M124 ${wy}q9-7 18 0t18 0t18 0t18 0t18 0`).join("");
+        const mid = pmCenterText(days), [ir, ig, ib] = pmInkRGB().map((v) => (v / 255).toFixed(3));
+        const big = emojiOnly(mid), midSize = big ? 36 : [...mid].length > 7 ? 10.5 : 14, midY = big ? 65 : 59;
+        return `<div class="al-head h-pm"><svg viewBox="0 0 220 108" width="297" height="146" aria-label="${y}년 ${mo + 1}월" style="color:rgb(${pmInkRGB().join(",")})">
+          <defs><path id="pm-top" d="M18 54a36 36 0 0 1 72 0"/><path id="pm-bot" d="M12 54a42 42 0 0 0 84 0"/>
+            <filter id="pm-wear" x="-4%" y="-4%" width="108%" height="108%">
+              <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7" result="n"/>
+              <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -2.6 0 0 0 2.05" result="keep"/>
+              <feComposite in="SourceGraphic" in2="keep" operator="in" result="worn"/>
+              <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="1" seed="3" result="w"/>
+              <feDisplacementMap in="worn" in2="w" scale="1.6" xChannelSelector="R" yChannelSelector="G"/>
+            </filter>
+            <filter id="pm-wear-soft" x="-4%" y="-4%" width="108%" height="108%"><!-- emoji: a little wear, no smudge -->
+              <feTurbulence type="fractalNoise" baseFrequency="0.6" numOctaves="1" seed="11" result="n"/>
+              <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -1.6 0 0 0 1.75" result="keep"/>
+              <feComposite in="SourceGraphic" in2="keep" operator="in"/>
+            </filter>
+            <filter id="pm-ink"><feColorMatrix type="matrix" values="0 0 0 0 ${ir}  0 0 0 0 ${ig}  0 0 0 0 ${ib}  -0.72 -1.416 -0.264 0 2.55" result="c"/>
+              <feComposite in="c" in2="SourceAlpha" operator="in"/></filter></defs>
+          <g filter="url(#pm-wear)">
+            <g fill="none" stroke="currentColor" stroke-width="2"><circle cx="54" cy="54" r="50"/><path d="${waves}"/></g>
+            <text font-size="13.5" letter-spacing="2.2" fill="currentColor"><textPath href="#pm-top" startOffset="50%" text-anchor="middle">${en.toUpperCase()}</textPath></text>
+            <text font-size="13" letter-spacing="5" fill="currentColor"><textPath href="#pm-bot" startOffset="50%" text-anchor="middle">${y}</textPath></text>
+            ${mid && !hasEmoji(mid)
+              ? `<text x="54" y="${midY}" text-anchor="middle" font-size="${midSize}" fill="currentColor" filter="url(#pm-ink)" class="pm-mid">${esc(mid)}</text>`
+              : !mid ? `<path d="${CLOUD_PATH}" transform="translate(54 54) scale(1.3)" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>` : ""}
+          </g>
+          ${mid && hasEmoji(mid) ? (() => { // emoji: pre-inked picture (same as the saved image), 3× for sharpness, gentle wear
+            const cv = inkPicture(mid, midSize * 3, pmInkRGB()), iw = cv.width / 3, ih = cv.height / 3;
+            return `<image filter="url(#pm-wear-soft)" href="${cv.toDataURL()}" x="${(54 - iw / 2).toFixed(1)}" y="${(54 - ih / 2).toFixed(1)}" width="${iw.toFixed(1)}" height="${ih.toFixed(1)}"/>`;
+          })() : ""}
+          </svg></div>`;
+      }
       case "typewriter": return `<div class="al-head h-tw"><b>${ab}. ${y}</b><span>— a month in stamps</span></div>`;
       case "serif": return `<div class="al-head h-se"><span class="yr">${y}</span><b>${mo + 1}월</b></div>`;
       case "script": return `<div class="al-head h-sc"><span class="yr">${y}</span><b>${en}</b></div>`;
       default: return `<div class="al-head">${y}<b>${mo + 1}월</b></div>`;
     }
   }
-  // Same header on the saved image (2× the screen size). Returns nothing; draws within y < 175.
-  async function drawAlbumHeader(g, x, y, mo, ink, baseFont) {
+  // Rubber-stamp wear on a drawn layer: smooth noise (fixed seed) knocks out patches of ink.
+  function wearInk(g, w, h, soft) {
+    const img = g.getImageData(0, 0, w, h), d = img.data;
+    const rnd = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
+    const noise = (x, y) => { // value noise, bilinear
+      const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
+      const a = rnd(xi, yi), b = rnd(xi + 1, yi), c = rnd(xi, yi + 1), e = rnd(xi + 1, yi + 1);
+      return (a * (1 - fx) + b * fx) * (1 - fy) + (c * (1 - fx) + e * fx) * fy;
+    };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      if (!d[i + 3]) continue;
+      const n = noise(x / 3.2, y / 3.2) * 0.6 + noise(x / 11, y / 11) * 0.4; // fine grain + bigger blotches
+      // Same curves as the screen's SVG filters (pm-wear: 2.05 − 2.6n, pm-wear-soft: 1.75 − 1.6n).
+      const keep = Math.max(0, Math.min(1, soft ? 1.75 - 1.6 * n : 2.05 - 2.6 * n));
+      d[i + 3] = Math.round(d[i + 3] * keep);
+    }
+    g.putImageData(img, 0, 0);
+  }
+  // Text along a circle, centered on its top (top=true, letters standing outward, read clockwise)
+  // or its bottom (letters standing inward, read left to right). r is the baseline radius.
+  function arcText(g, text, cx, cy, r, top, gap) {
+    const ws = [...text].map((ch) => g.measureText(ch).width + gap);
+    const total = ws.reduce((a, b) => a + b, 0) - gap;
+    let acc = 0;
+    g.textAlign = "center"; g.textBaseline = "alphabetic";
+    [...text].forEach((ch, i) => {
+      const mid = acc + (ws[i] - gap) / 2;
+      const a = top ? -Math.PI / 2 - total / 2 / r + mid / r : Math.PI / 2 + total / 2 / r - mid / r;
+      g.save();
+      g.translate(cx + r * Math.cos(a), cy + r * Math.sin(a));
+      g.rotate(top ? a + Math.PI / 2 : a - Math.PI / 2);
+      g.fillText(ch, 0, 0);
+      g.restore();
+      acc += ws[i];
+    });
+  }
+  // Same header on the saved image (2× the screen size). Returns nothing; draws within y < 190.
+  async function drawAlbumHeader(g, x, y, mo, ink, baseFont, days) {
     const en = MONTH_EN[mo], ab = en.slice(0, 3), F = HEAD_FONTS;
     const spaced = (text, px, py, gap) => { for (const ch of text) { g.fillText(ch, px, py); px += g.measureText(ch).width + gap; } return px; };
     const need = {
@@ -1036,18 +1155,50 @@
         const nx = x + g.measureText(String(mo + 1)).width + 22;
         g.font = need[1]; spaced(en.toUpperCase(), nx, 132, 6); spaced(String(y), nx, 164, 6); break;
       }
-      case "postmark": {
-        const pm = "#3b4a7a", cx = x + 80, cy = 98;
-        g.save(); g.globalAlpha = 0.88; g.strokeStyle = pm; g.fillStyle = pm; g.lineWidth = 3.6;
-        g.beginPath(); g.arc(cx, cy, 70, 0, 7); g.stroke(); g.beginPath(); g.arc(cx, cy, 52, 0, 7); g.stroke();
-        for (const dy of [-24, 0, 24]) {
-          g.beginPath(); g.moveTo(cx + 80, cy + dy);
-          for (let k = 0; k < 3; k++) { const sx = cx + 80 + k * 28; g.quadraticCurveTo(sx + 7, cy + dy - 10, sx + 14, cy + dy); g.quadraticCurveTo(sx + 21, cy + dy + 10, sx + 28, cy + dy); }
-          g.stroke();
+      case "postmark": { // the screen's SVG postmark (220×108 units) redrawn K× larger, then worn like a rubber stamp
+        const [ir, ig, ib] = pmInkRGB(), pm = `rgb(${ir},${ig},${ib})`;
+        const K = 460 / 220, S = 1.35, LW = Math.ceil(220 * K * S), LH = Math.ceil(108 * K * S); // K: units → canvas px, S: size up
+        const layer = canvasOf(LW, LH), lg = layer.getContext("2d");
+        lg.scale(S * K, S * K); // from here on, draw in the SVG's own units
+        lg.strokeStyle = pm; lg.fillStyle = pm; lg.lineWidth = 2; lg.lineCap = "butt";
+        lg.beginPath(); lg.arc(54, 54, 50, 0, 7); lg.stroke();
+        for (const wy of [26, 40, 54, 68, 82]) { // M124 y q9-7 18 0 t18 0 ×4
+          lg.beginPath(); lg.moveTo(124, wy);
+          for (let k = 0; k < 5; k++) lg.quadraticCurveTo(124 + k * 18 + 9, wy + (k % 2 ? 7 : -7), 124 + (k + 1) * 18, wy);
+          lg.stroke();
         }
-        g.textAlign = "center"; g.font = need[0]; g.fillText(ab.toUpperCase(), cx, cy - 4);
-        g.font = `400 22px ${F.type}`; g.fillText(String(y), cx, cy + 24);
-        g.restore(); break;
+        lg.font = `400 13.5px ${F.type}`; arcText(lg, en.toUpperCase(), 54, 54, 36, true, 2.2);
+        lg.font = `400 13px ${F.type}`; arcText(lg, String(y), 54, 54, 42, false, 5);
+        const mid = pmCenterText(days), big = emojiOnly(mid), midSize = big ? 36 : [...mid].length > 7 ? 10.5 : 14, midY = big ? 65 : 59;
+        let emojiLater = null;
+        if (mid && hasEmoji(mid)) { // emoji: same pre-inked picture as the screen, gentle wear
+          try { await document.fonts.load(`700 ${midSize}px ${PM_FONT}`, mid); } catch (e) {}
+          const q = K * S * 1.5, pic = inkPicture(mid, Math.round(midSize * q), [ir, ig, ib]);
+          wearInk(pic.getContext("2d"), pic.width, pic.height, true);
+          const pw = pic.width / q, ph = pic.height / q;
+          emojiLater = () => lg.drawImage(pic, 54 - pw / 2, 54 - ph / 2, pw, ph);
+        } else if (mid) { // plain text, turned into ink (same rule as the screen's pm-ink filter)
+          const midFont = `700 ${midSize}px ${PM_FONT}`;
+          try { await document.fonts.load(midFont, mid); } catch (e) {}
+          const t = canvasOf(LW, LH), tg = t.getContext("2d", { willReadFrequently: true });
+          tg.scale(S * K, S * K);
+          tg.font = midFont; tg.textAlign = "center"; tg.fillStyle = pm; tg.fillText(mid, 54, midY);
+          const d = tg.getImageData(0, 0, LW, LH);
+          for (let i = 0; i < d.data.length; i += 4) {
+            if (!d.data[i + 3]) continue;
+            const l = (d.data[i] * 0.3 + d.data[i + 1] * 0.59 + d.data[i + 2] * 0.11) / 255;
+            d.data[i + 3] = Math.round(d.data[i + 3] * Math.max(0, Math.min(1, (1 - l) * 2.4 + 0.15)));
+            d.data[i] = ir; d.data[i + 1] = ig; d.data[i + 2] = ib;
+          }
+          tg.putImageData(d, 0, 0);
+          lg.save(); lg.setTransform(1, 0, 0, 1, 0, 0); lg.drawImage(t, 0, 0); lg.restore(); // t is already at full size
+        } else { // cloud: translate(54 54) scale(1.3), stroke 1.7
+          lg.save(); lg.translate(54, 54); lg.scale(1.3, 1.3); lg.lineWidth = 1.7; lg.lineJoin = "round"; lg.lineCap = "round"; lg.stroke(new Path2D(CLOUD_PATH)); lg.restore();
+        }
+        wearInk(lg, LW, LH);
+        if (emojiLater) emojiLater();
+        g.save(); g.globalAlpha = 0.9; g.drawImage(layer, x, 0); g.restore();
+        break;
       }
       case "typewriter": g.font = need[0]; g.fillText(`${ab}. ${y}`, x, 132); g.globalAlpha = 0.55; g.font = `400 22px ${F.type}`; g.fillText("— a month in stamps", x, 168); g.globalAlpha = 1; break;
       case "serif": g.font = need[0]; spaced(String(y), x, 78, 8); g.font = need[1]; g.fillText(`${mo + 1}월`, x, 162); break;
@@ -1061,7 +1212,7 @@
     shape: [["stamp", "우표"], ["polaroid", "폴라로이드"], ["round", "둥근 사각"], ["circle", "동그라미"]],
     filter: [["orig", "원본"], ["pixel", "픽셀아트"], ["halftone", "망점"], ["pastel", "파스텔"]],
     bg: [["white", "흰색"], ["theme", "테마"]],
-    font: [["postmark", "소인"], ["editorial", "이탤릭"], ["bignum", "큰 숫자"], ["typewriter", "타자기"], ["serif", "명조"], ["script", "손글씨"], ["basic", "기본"]],
+    font: [["basic", "기본"], ["postmark", "우체국 소인"], ["editorial", "영문 이탤릭"], ["bignum", "큰 숫자"], ["typewriter", "타자기"], ["serif", "명조"], ["script", "영문 손글씨"]],
   };
   // Cover photo of a diary body: the one marked data-rep, else the first.
   function coverOf(body) {
@@ -1175,13 +1326,27 @@
     }
     return out;
   }
+  // 글씨 buttons show a small sample in their own style instead of a name.
+  const FONT_SAMPLE = {
+    basic: `<span style="font-weight:700">11월</span>`,
+    postmark: `<svg viewBox="0 0 40 22" width="36" height="20" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="11" cy="11" r="9.5"/><path d="M23 7q3-2 6 0t6 0M23 11q3-2 6 0t6 0M23 15q3-2 6 0t6 0"/></g></svg>`,
+    editorial: `<span style="font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:600;font-size:16px">Nov</span>`,
+    bignum: `<span style="font-family:'Playfair Display',serif;font-size:16px">11</span><small style="font-family:'Josefin Sans';font-size:8px;letter-spacing:1px;margin-left:2px">NOV</small>`,
+    typewriter: `<span style="font-family:'Special Elite',monospace">Nov.</span>`,
+    serif: `<span style="font-family:'Hahmlet',serif;font-weight:500">11월</span>`,
+    script: `<span style="font-family:'Caveat',cursive;font-weight:600;font-size:17px">Nov</span>`,
+  };
   function albumOptions() {
-    const seg = (key) => `<div class="seg al-seg" data-k="${key}">` + ALBUM_OPTS[key].map(([v, n]) =>
-      `<button type="button" data-v="${v}" class="${album[key] === v ? "on" : ""}">${n}</button>`).join("") + `</div>`;
+    const seg = (key) => `<div class="seg al-seg${key === "font" ? " al-fonts" : ""}" data-k="${key}">` + ALBUM_OPTS[key].map(([v, n]) =>
+      `<button type="button" data-v="${v}" class="${album[key] === v ? "on" : ""}" title="${n}" aria-label="${n}">${key === "font" ? FONT_SAMPLE[v] : n}</button>`).join("") + `</div>`;
     $("al-opts").innerHTML =
       `<div class="al-row"><span>모양</span>${seg("shape")}</div>` +
       `<div class="al-row"><span>필터</span>${seg("filter")}</div>` +
       `<div class="al-row"><span>글씨</span>${seg("font")}</div>` +
+      (album.font === "postmark"
+        ? `<div class="al-row al-pm"><span>가운데</span><input id="al-pm" maxlength="16" placeholder="비우면 구름" value="${esc(album.pmCenter === "{days}" ? "" : album.pmCenter || "")}" aria-label="소인 가운데 글자 (이모지도 돼)">` +
+          `<button type="button" class="al-pm-q${album.pmCenter === "{days}" ? " on" : ""}" data-pm="{days}">사진 수</button></div>`
+        : "") +
       `<div class="al-row"><span>배경</span>${seg("bg")}<label class="al-empty"><input type="checkbox" id="al-empty"${album.empty ? " checked" : ""}> 빈 날도</label></div>`;
   }
   async function renderAlbum() {
@@ -1199,7 +1364,7 @@
       if (c || album.empty) list.push({ key, d, id: c ? c.id : "", dow: new Date(y, mo, d).getDay() });
     }
     $("al-count").textContent = (covers.size ? `사진 ${covers.size}일` : "이 달엔 대표 사진이 아직 없어") + (locked && !vault ? " · 잠긴 일기는 열어야 보여" : "");
-    page.innerHTML = headerHTML(y, mo) + `<div class="al-grid">` + list.map((s) =>
+    page.innerHTML = headerHTML(y, mo, covers.size) + `<div class="al-grid">` + list.map((s) =>
       `<button type="button" class="stp${s.id ? "" : " none"}${s.dow === 0 ? " sun" : s.dow === 6 ? " sat" : ""}" data-day="${s.key}" title="${s.key} 일기 열기"><span class="ph"></span><b>${s.d}</b></button>`).join("") + `</div>`;
     // Load the photos, then draw them all with one palette.
     const imgs = new Map();
@@ -1214,7 +1379,7 @@
       if (im) slot.replaceChildren(stampCanvas(im, album.filter, pal));
       else if (s.id) slot.parentElement.classList.add("missing");
     }
-    albumStamps = { y, mo, list, imgs, pal };
+    albumStamps = { y, mo, list, imgs, pal, days: covers.size };
   }
   let albumStamps = null;
   function openAlbum() {
@@ -1231,7 +1396,7 @@
   async function albumPNG() {
     const st = albumStamps;
     if (!st) return null;
-    const cols = 5, sw = 200, sh = 240, gap = 34, mx = 70, top = 190, bottom = 90;
+    const cols = 5, sw = 200, sh = 240, gap = 34, mx = 70, top = album.font === "postmark" ? 325 : 190, bottom = 90;
     const rows = Math.max(1, Math.ceil(st.list.length / cols));
     const W = mx * 2 + cols * sw + (cols - 1) * gap, H = top + rows * (sh + gap + (album.shape === "polaroid" ? 28 : 0)) - gap + bottom;
     const c = canvasOf(W, H), g = c.getContext("2d");
@@ -1239,7 +1404,7 @@
     g.fillStyle = album.bg === "theme" ? css.getPropertyValue("--bg").trim() || "#f6f5f2" : "#ffffff";
     g.fillRect(0, 0, W, H);
     const ink = album.bg === "theme" ? css.getPropertyValue("--text").trim() || "#222" : "#2b2a28";
-    await drawAlbumHeader(g, mx, st.y, st.mo, ink, css.getPropertyValue("--font"));
+    await drawAlbumHeader(g, mx, st.y, st.mo, ink, css.getPropertyValue("--font"), st.days);
     st.list.forEach((s, i) => {
       const cx = mx + (i % cols) * (sw + gap), cy = top + Math.floor(i / cols) * (sh + gap + (album.shape === "polaroid" ? 28 : 0));
       const im = s.id && st.imgs.get(s.id);
@@ -1290,8 +1455,10 @@
       lg.textAlign = "center";
       lg.fillText(label, right - tw / 2, bottom - 7);
     }
-    g.save();
-    g.shadowColor = "rgba(0,0,0,.12)"; g.shadowBlur = 8; g.shadowOffsetY = 2;
+    g.save(); // faint outline (so a white stamp shows on white), then a soft shadow
+    g.shadowColor = "rgba(0,0,0,.07)"; g.shadowBlur = 8; g.shadowOffsetY = 2;
+    g.drawImage(layer, x - 1, y - 1);
+    g.shadowColor = "rgba(0,0,0,.16)"; g.shadowBlur = 1.4; g.shadowOffsetY = 0;
     g.drawImage(layer, x - 1, y - 1);
     g.restore();
   }
@@ -2951,10 +3118,21 @@
     if (e.target === $("album")) { closeAlbum(); return; }
     const opt = e.target.closest(".al-seg button[data-v]");
     if (opt) { album[opt.parentElement.dataset.k] = opt.dataset.v; saveAlbumOpts(); return; }
+    const q = e.target.closest(".al-pm-q");
+    if (q) { album.pmCenter = album.pmCenter === q.dataset.pm ? "" : q.dataset.pm; saveAlbumOpts(); return; }
     const st = e.target.closest(".stp[data-day]");
     if (st) { const day = st.dataset.day; closeAlbum(); calMonth = dayOf(day); calMonth.setDate(1); openDiary(day); }
   });
   $("album").addEventListener("change", (e) => { if (e.target.id === "al-empty") { album.empty = e.target.checked; saveAlbumOpts(); } });
+  // Typing in the postmark's middle redraws only the header, so the box keeps focus.
+  $("album").addEventListener("input", (e) => {
+    if (e.target.id !== "al-pm") return;
+    album.pmCenter = e.target.value.trim();
+    lsSet(ALBUM_KEY, album);
+    const head = $("al-page").querySelector(".al-head");
+    if (head && albumStamps) head.outerHTML = headerHTML(albumStamps.y, albumStamps.mo, albumStamps.days);
+    for (const b of document.querySelectorAll(".al-pm-q")) b.classList.toggle("on", b.dataset.pm === album.pmCenter);
+  });
   $("f-cal").onclick = addToCalendar;
   document.addEventListener("visibilitychange", () => { if (!document.hidden && tab === "diary") calLoad(false); });
   $("diary-unlock").onclick = () => unlockVault().then(renderAll);

@@ -380,7 +380,7 @@ button[hidden] { display: none !important; }
 .al-count { flex: 1; font-size: 12.5px; color: var(--muted); margin-left: 8px; }
 .al-opts { display: grid; gap: 6px; }
 .al-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
-.al-row > span:first-child { width: 30px; flex: none; }
+.al-row > span:first-child { width: 40px; flex: none; white-space: nowrap; }
 .al-seg { display: inline-flex; flex-wrap: wrap; padding: 2px; max-width: 100%; }
 .seg.al-seg button { flex: none; padding: 4px 11px; font-size: 13px; white-space: nowrap; }
 .al-empty { display: inline-flex; align-items: center; gap: 5px; margin-left: 6px; color: var(--text); cursor: pointer; }
@@ -397,10 +397,16 @@ button[hidden] { display: none !important; }
 .h-big { display: flex; align-items: flex-end; gap: 11px; }
 .h-big b { font-family: "Playfair Display", serif; font-weight: 500; font-size: 64px; line-height: .82; }
 .h-big span { font-family: "Josefin Sans", var(--font); font-size: 11px; letter-spacing: 3px; line-height: 1.5; }
-.h-pm { color: #3b4a7a; }
-.bg-theme .h-pm { color: var(--ink); }
-.h-pm svg { display: block; opacity: .88; font-family: "Special Elite", monospace; }
-.h-pm svg text { fill: currentColor; }
+.h-pm svg { display: block; opacity: .9; font-family: "Special Elite", "Nanum Gothic Coding", monospace; max-width: 100%; height: auto; }
+.h-pm .pm-mid { font-weight: 700; }
+.al-pm input {
+  font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 7px; padding: 4px 8px; width: 130px; outline: none;
+}
+.al-pm input:focus { border-color: var(--accent); }
+.al-pm-q { font-size: 13px; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--line); color: var(--text); }
+.al-pm-q.on { border-color: var(--accent); color: var(--accent); }
+.al-fonts button { min-width: 44px; display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
 .h-tw b { font-family: "Special Elite", monospace; font-weight: 400; font-size: 32px; }
 .h-tw span { display: block; font-family: "Special Elite", monospace; font-size: 11px; opacity: .55; margin-top: 4px; }
 .h-se .yr { font-family: "Hahmlet", serif; font-weight: 300; letter-spacing: 4px; }
@@ -409,7 +415,10 @@ button[hidden] { display: none !important; }
 .al-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 18px 12px; justify-items: center; }
 .stp { position: relative; display: block; padding: 0; border-radius: 0; color: inherit; cursor: pointer; transition: transform .15s; }
 /* Lift only: rotating would make the perforated edge jagged. */
-@media (hover: hover) { .stp:hover { transform: translateY(-3px); } .stp:hover .ph { filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .18)); } }
+@media (hover: hover) {
+  .stp:hover { transform: translateY(-3px); }
+  .shape-stamp .stp:hover { filter: drop-shadow(0 0 .5px rgba(0, 0, 0, .16)) drop-shadow(0 5px 8px rgba(0, 0, 0, .12)); }
+}
 .stp .ph { display: block; width: 104px; height: 120px; box-sizing: border-box; }
 .stp canvas { display: block; width: 100%; height: 100%; object-fit: cover; }
 /* Date on a small white tab, like a stamp's value; Sunday red, Saturday blue (as in the calendar). */
@@ -425,9 +434,12 @@ button[hidden] { display: none !important; }
 .stp.none:not(.sun):not(.sat) b, .stp.missing:not(.sun):not(.sat) b { color: var(--ink); }
 /* frames */
 /* Perforation: 12px apart, 4px deep. The box is a multiple of 12 (108×120) so the holes meet at the corners. */
+/* The mask cuts away any shadow on the same element, so the faint outline goes on the button
+   around it (it follows the perforated edge). */
+.shape-stamp .stp { filter: drop-shadow(0 0 .5px rgba(0, 0, 0, .16)) drop-shadow(0 1px 3px rgba(0, 0, 0, .07)); }
 .shape-stamp .stp .ph {
   width: 108px; height: 120px;
-  background: #fff; padding: 9px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .14));
+  background: #fff; padding: 9px;
   -webkit-mask: linear-gradient(#000 0 0) content-box, radial-gradient(circle at 6px 6px, transparent 3.9px, #000 4.4px) -6px -6px / 12px 12px;
           mask: linear-gradient(#000 0 0) content-box, radial-gradient(circle at 6px 6px, transparent 3.9px, #000 4.4px) -6px -6px / 12px 12px;
 }
@@ -439,13 +451,17 @@ button[hidden] { display: none !important; }
 .shape-circle .stp .ph { width: 104px; height: 104px; border-radius: 50%; overflow: hidden; box-shadow: 0 1px 4px rgba(0, 0, 0, .14); }
 .shape-circle .stp b { right: auto; left: 50%; transform: translateX(-50%); bottom: 8px; }
 .shape-round .stp.none .ph::after, .shape-circle .stp.none .ph::after { border-radius: inherit; }
+/* Phones: three stamps a row (80 wide, sizes on the 10px perforation grid). */
 @media (max-width: 520px) {
-  .al-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 14px 8px; }
-  .stp .ph { width: 84px; height: 98px; }
-  .shape-polaroid .stp .ph { height: 112px; }
-  .shape-circle .stp .ph { width: 84px; height: 84px; }
+  .al-page { padding: 16px 14px 20px; }
+  .al-grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 14px 6px; }
+  .stp .ph { width: 80px; height: 92px; }
+  .shape-polaroid .stp .ph { height: 106px; }
+  .shape-circle .stp .ph { width: 80px; height: 80px; }
+  .stp b { font-size: 10.5px; right: 9px; bottom: 8px; }
+  .al-row > span:first-child { width: 100%; }
   .shape-stamp .stp .ph {
-    width: 90px; height: 100px; padding: 7px;
+    width: 80px; height: 90px; padding: 7px;
     -webkit-mask: linear-gradient(#000 0 0) content-box, radial-gradient(circle at 5px 5px, transparent 3.2px, #000 3.7px) -5px -5px / 10px 10px;
             mask: linear-gradient(#000 0 0) content-box, radial-gradient(circle at 5px 5px, transparent 3.2px, #000 3.7px) -5px -5px / 10px 10px;
   }
