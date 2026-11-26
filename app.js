@@ -1096,6 +1096,16 @@
     document.head.appendChild(Object.assign(document.createElement("link"), {
       rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Nanum+Gothic+Coding:wght@700&display=swap" }));
   }
+  // The postmark's middle: emoji get smaller the more there are, and never leave the inner ring
+  // (about 58×46 units inside the month/year lettering).
+  const PM_MID_W = 58, PM_MID_H = 46;
+  function pmMidSize(mid, big) {
+    if (!big) return [...mid].length > 7 ? 10.5 : 14;
+    let n = 1;
+    try { n = [...new Intl.Segmenter("ko", { granularity: "grapheme" }).segment(mid.trim())].filter((g) => g.segment.trim()).length; }
+    catch (e) { n = [...mid.replace(/[\uFE0F\u200D\s]/g, "")].length; }
+    return n <= 1 ? 36 : n === 2 ? 24 : n === 3 ? 17 : 13;
+  }
   function headerHTML(y, mo, days) {
     const en = MONTH_EN[mo], ab = en.slice(0, 3);
     switch (album.font) {
@@ -1104,7 +1114,7 @@
       case "postmark": { // like a real rubber-stamp cancellation: month on top, year below, your text (or a cloud) inside
         const waves = [26, 40, 54, 68, 82].map((wy) => `M110 ${wy}q9-7 18 0t18 0t18 0t18 0t18 0t18 0`).join(""); // whole waves, a small gap after the circle
         const mid = pmCenterText(days);
-        const big = emojiOnly(mid), midSize = big ? 36 : [...mid].length > 7 ? 10.5 : 14, midY = big ? 65 : 59;
+        const big = emojiOnly(mid), midSize = pmMidSize(mid, big), midY = big ? 65 : 59;
         return `<div class="al-head h-pm"><svg viewBox="0 0 220 108" width="297" height="146" aria-label="${y}년 ${mo + 1}월" style="color:rgb(${pmInkRGB().join(",")})">
           <defs><path id="pm-top" d="M18 54a36 36 0 0 1 72 0"/><path id="pm-bot" d="M12 54a42 42 0 0 0 84 0"/>
             <filter id="pm-wear" x="-4%" y="-4%" width="108%" height="108%">
@@ -1129,7 +1139,8 @@
               : !mid ? `<path d="${CLOUD_PATH}" transform="translate(54 54) scale(1.3)" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>` : ""}
           </g>
           ${mid && hasEmoji(mid) ? (() => { // emoji: pre-inked picture (same as the saved image), 3× for sharpness, gentle wear
-            const cv = inkPicture(mid, midSize * 3, pmInkRGB()), iw = cv.width / 3, ih = cv.height / 3;
+            const cv = inkPicture(mid, midSize * 3, pmInkRGB()), fit = Math.min(1, PM_MID_W / (cv.width / 3), PM_MID_H / (cv.height / 3));
+            const iw = (cv.width / 3) * fit, ih = (cv.height / 3) * fit; // always inside the ring
             return `<image filter="url(#pm-wear-soft)" href="${cv.toDataURL()}" x="${(54 - iw / 2).toFixed(1)}" y="${(54 - ih / 2).toFixed(1)}" width="${iw.toFixed(1)}" height="${ih.toFixed(1)}"/>`;
           })() : ""}
           </svg></div>`;
@@ -1209,13 +1220,13 @@
         }
         lg.font = `400 13.5px ${F.type}`; arcText(lg, en.toUpperCase(), 54, 54, 36, true, 2.2);
         lg.font = `400 13px ${F.type}`; arcText(lg, String(y), 54, 54, 42, false, 5);
-        const mid = pmCenterText(days), big = emojiOnly(mid), midSize = big ? 36 : [...mid].length > 7 ? 10.5 : 14, midY = big ? 65 : 59;
+        const mid = pmCenterText(days), big = emojiOnly(mid), midSize = pmMidSize(mid, big), midY = big ? 65 : 59;
         let emojiLater = null;
         if (mid && hasEmoji(mid)) { // emoji: same pre-inked picture as the screen, gentle wear
           try { await document.fonts.load(`700 ${midSize}px ${PM_FONT}`, mid); } catch (e) {}
           const q = K * S * 1.5, pic = inkPicture(mid, Math.round(midSize * q), [ir, ig, ib]);
           wearInk(pic.getContext("2d"), pic.width, pic.height, true, pmScale);
-          const pw = pic.width / q, ph = pic.height / q;
+          const fit = Math.min(1, PM_MID_W / (pic.width / q), PM_MID_H / (pic.height / q)), pw = (pic.width / q) * fit, ph = (pic.height / q) * fit;
           emojiLater = () => lg.drawImage(pic, 54 - pw / 2, 54 - ph / 2, pw, ph);
         } else if (mid) { // plain text: same ink as the month and year
           const midFont = `700 ${midSize}px ${PM_FONT}`;
