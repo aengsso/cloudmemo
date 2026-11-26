@@ -1061,8 +1061,8 @@
       case "editorial": return `<div class="al-head h-ed"><span class="yr">${y}</span><b>${en}</b></div>`;
       case "bignum": return `<div class="al-head h-big"><b>${mo + 1}</b><span>${en.toUpperCase()}<br>${y}</span></div>`;
       case "postmark": { // like a real rubber-stamp cancellation: month on top, year below, your text (or a cloud) inside
-        const waves = [26, 40, 54, 68, 82].map((wy) => `M124 ${wy}q9-7 18 0t18 0t18 0t18 0t18 0`).join("");
-        const mid = pmCenterText(days), [ir, ig, ib] = pmInkRGB().map((v) => (v / 255).toFixed(3));
+        const waves = [26, 40, 54, 68, 82].map((wy) => `M110 ${wy}q9-7 18 0t18 0t18 0t18 0t18 0t18 0`).join(""); // whole waves, a small gap after the circle
+        const mid = pmCenterText(days);
         const big = emojiOnly(mid), midSize = big ? 36 : [...mid].length > 7 ? 10.5 : 14, midY = big ? 65 : 59;
         return `<div class="al-head h-pm"><svg viewBox="0 0 220 108" width="297" height="146" aria-label="${y}년 ${mo + 1}월" style="color:rgb(${pmInkRGB().join(",")})">
           <defs><path id="pm-top" d="M18 54a36 36 0 0 1 72 0"/><path id="pm-bot" d="M12 54a42 42 0 0 0 84 0"/>
@@ -1078,14 +1078,13 @@
               <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -1.6 0 0 0 1.75" result="keep"/>
               <feComposite in="SourceGraphic" in2="keep" operator="in"/>
             </filter>
-            <filter id="pm-ink"><feColorMatrix type="matrix" values="0 0 0 0 ${ir}  0 0 0 0 ${ig}  0 0 0 0 ${ib}  -0.72 -1.416 -0.264 0 2.55" result="c"/>
-              <feComposite in="c" in2="SourceAlpha" operator="in"/></filter></defs>
+</defs>
           <g filter="url(#pm-wear)">
             <g fill="none" stroke="currentColor" stroke-width="2"><circle cx="54" cy="54" r="50"/><path d="${waves}"/></g>
             <text font-size="13.5" letter-spacing="2.2" fill="currentColor"><textPath href="#pm-top" startOffset="50%" text-anchor="middle">${en.toUpperCase()}</textPath></text>
             <text font-size="13" letter-spacing="5" fill="currentColor"><textPath href="#pm-bot" startOffset="50%" text-anchor="middle">${y}</textPath></text>
             ${mid && !hasEmoji(mid)
-              ? `<text x="54" y="${midY}" text-anchor="middle" font-size="${midSize}" fill="currentColor" filter="url(#pm-ink)" class="pm-mid">${esc(mid)}</text>`
+              ? `<text x="54" y="${midY}" text-anchor="middle" font-size="${midSize}" fill="currentColor" class="pm-mid">${esc(mid)}</text>`
               : !mid ? `<path d="${CLOUD_PATH}" transform="translate(54 54) scale(1.3)" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>` : ""}
           </g>
           ${mid && hasEmoji(mid) ? (() => { // emoji: pre-inked picture (same as the saved image), 3× for sharpness, gentle wear
@@ -1162,9 +1161,9 @@
         lg.scale(S * K, S * K); // from here on, draw in the SVG's own units
         lg.strokeStyle = pm; lg.fillStyle = pm; lg.lineWidth = 2; lg.lineCap = "butt";
         lg.beginPath(); lg.arc(54, 54, 50, 0, 7); lg.stroke();
-        for (const wy of [26, 40, 54, 68, 82]) { // M124 y q9-7 18 0 t18 0 ×4
-          lg.beginPath(); lg.moveTo(124, wy);
-          for (let k = 0; k < 5; k++) lg.quadraticCurveTo(124 + k * 18 + 9, wy + (k % 2 ? 7 : -7), 124 + (k + 1) * 18, wy);
+        for (const wy of [26, 40, 54, 68, 82]) { // M110 y q9-7 18 0 t18 0 ×5
+          lg.beginPath(); lg.moveTo(110, wy);
+          for (let k = 0; k < 6; k++) lg.quadraticCurveTo(110 + k * 18 + 9, wy + (k % 2 ? 7 : -7), 110 + (k + 1) * 18, wy);
           lg.stroke();
         }
         lg.font = `400 13.5px ${F.type}`; arcText(lg, en.toUpperCase(), 54, 54, 36, true, 2.2);
@@ -1177,21 +1176,10 @@
           wearInk(pic.getContext("2d"), pic.width, pic.height, true);
           const pw = pic.width / q, ph = pic.height / q;
           emojiLater = () => lg.drawImage(pic, 54 - pw / 2, 54 - ph / 2, pw, ph);
-        } else if (mid) { // plain text, turned into ink (same rule as the screen's pm-ink filter)
+        } else if (mid) { // plain text: same ink as the month and year
           const midFont = `700 ${midSize}px ${PM_FONT}`;
           try { await document.fonts.load(midFont, mid); } catch (e) {}
-          const t = canvasOf(LW, LH), tg = t.getContext("2d", { willReadFrequently: true });
-          tg.scale(S * K, S * K);
-          tg.font = midFont; tg.textAlign = "center"; tg.fillStyle = pm; tg.fillText(mid, 54, midY);
-          const d = tg.getImageData(0, 0, LW, LH);
-          for (let i = 0; i < d.data.length; i += 4) {
-            if (!d.data[i + 3]) continue;
-            const l = (d.data[i] * 0.3 + d.data[i + 1] * 0.59 + d.data[i + 2] * 0.11) / 255;
-            d.data[i + 3] = Math.round(d.data[i + 3] * Math.max(0, Math.min(1, (1 - l) * 2.4 + 0.15)));
-            d.data[i] = ir; d.data[i + 1] = ig; d.data[i + 2] = ib;
-          }
-          tg.putImageData(d, 0, 0);
-          lg.save(); lg.setTransform(1, 0, 0, 1, 0, 0); lg.drawImage(t, 0, 0); lg.restore(); // t is already at full size
+          lg.font = midFont; lg.textAlign = "center"; lg.fillText(mid, 54, midY);
         } else { // cloud: translate(54 54) scale(1.3), stroke 1.7
           lg.save(); lg.translate(54, 54); lg.scale(1.3, 1.3); lg.lineWidth = 1.7; lg.lineJoin = "round"; lg.lineCap = "round"; lg.stroke(new Path2D(CLOUD_PATH)); lg.restore();
         }
