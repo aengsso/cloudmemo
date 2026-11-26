@@ -17,7 +17,7 @@
 <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1b1b1d" media="(prefers-color-scheme: dark)">
 <!--WEB-ONLY-END-->
-<link rel="stylesheet" href="style.css?v=28">
+<link rel="stylesheet" href="style.css?v=31">
 </head>
 <body>
 <div id="app" class="show-list">
@@ -44,6 +44,9 @@
       <div class="cal-head">
         <span id="cal-title"></span>
         <button id="cal-today" class="text-btn" title="이번 달로 가서 오늘 일기 열기 (Ctrl+N)">오늘</button>
+        <button id="cal-album" class="icon-btn" title="이달의 사진" aria-label="이달의 사진" hidden>
+          <svg viewBox="0 0 24 24" width="19" height="19"><path d="M5 4.5h14v15H5z" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2 2" fill="none"/><rect x="8" y="7.5" width="8" height="9" rx="1" fill="currentColor" opacity=".35"/></svg>
+        </button>
         <button id="cal-gcal" class="icon-btn" title="구글 캘린더 일정 보기" aria-label="구글 캘린더 일정" hidden>
           <svg viewBox="0 0 24 24" width="19" height="19"><rect x="3.5" y="5" width="17" height="15.5" rx="3" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M3.5 9.5h17M8 3.2v3.6M16 3.2v3.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle class="gcal-dot" cx="12" cy="14.8" r="2.3" fill="currentColor"/></svg>
         </button>
@@ -198,6 +201,20 @@
     <div class="sheet-btns"><button type="button" class="text-btn" id="set-help">단축키·사용법</button><button type="button" class="text-btn primary" id="set-close">완료</button></div>
   </div>
 </div>
+<div id="album" class="overlay" hidden>
+  <div class="sheet album" role="dialog" aria-modal="true" aria-labelledby="al-title">
+    <div class="al-top">
+      <button type="button" class="icon-btn" id="al-prev" aria-label="이전 달"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></button>
+      <h2 id="al-title"></h2>
+      <button type="button" class="icon-btn" id="al-next" aria-label="다음 달"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></button>
+      <span class="al-count" id="al-count"></span>
+      <button type="button" class="icon-btn" id="al-close" aria-label="닫기"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></button>
+    </div>
+    <div class="al-opts" id="al-opts"></div>
+    <div class="al-scroll"><div class="al-page" id="al-page"></div></div>
+    <div class="sheet-btns"><button type="button" class="text-btn primary" id="al-save">이미지로 저장</button></div>
+  </div>
+</div>
 <div id="help" class="overlay" hidden>
   <div class="sheet help" role="dialog" aria-modal="true" aria-labelledby="help-title">
     <div class="help-head">
@@ -291,7 +308,8 @@
       <section data-h="tips" hidden>
         <ul class="tips">
           <li>첫 줄이 메모 <b>제목</b>이 돼.</li>
-          <li><b>사진</b>은 서식 줄의 사진 버튼, 붙여넣기, 끌어다 놓기로 넣어. 알맞은 크기로 줄여서 드라이브 'CloudMemo/사진' 폴더에 따로 저장돼.</li>
+          <li><b>사진</b>은 서식 줄의 사진 버튼, 붙여넣기, 끌어다 놓기로 넣어. 알맞은 크기로 줄여서 드라이브 'CloudMemo/사진' 폴더에 따로 저장돼. 사진을 누르면 옮기기·지우기·대표 사진 정하기가 나와.</li>
+          <li>일기 달력 위 <b>우표 버튼(이달의 사진)</b>을 누르면 그 달의 대표 사진이 우표처럼 모여. 모양·필터·배경을 고르고 이미지로 저장할 수 있어.</li>
           <li>서식 줄의 <b>캘린더(+) 버튼</b>을 누르면 그 줄이 구글 캘린더 새 일정으로 열려. "11월 28일 오후 3시"나 F5 날짜가 있으면 날짜도 채워져.</li>
           <li>일기 달력 위 <b>캘린더 버튼</b>을 켜면 구글 캘린더 일정이 달력에 점으로, 아래에 목록으로 보여. <b>＋ 일정 추가</b>로 그날 일정을 바로 넣을 수 있어.</li>
           <li>☐를 누르면 체크돼. 목록의 <b>5/6</b>은 체크한 개수야.</li>
@@ -318,9 +336,9 @@
   </form>
 </div>
 <!--WEB-ONLY-START-->
-<script src="config.js?v=28"></script>
-<script src="api-web.js?v=28"></script>
+<script src="config.js?v=31"></script>
+<script src="api-web.js?v=31"></script>
 <!--WEB-ONLY-END-->
-<script src="app.js?v=28"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>

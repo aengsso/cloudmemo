@@ -180,6 +180,7 @@
         const id = n.getAttribute("data-img");
         if (!IMG_ID.test(id || "")) continue;
         el.setAttribute("data-img", id);
+        if (n.getAttribute("data-rep") === "1") el.setAttribute("data-rep", "1"); // the day's cover photo
         el.alt = "사진";
         dst.appendChild(el);
         continue;
@@ -771,7 +772,7 @@
     $("diary-locked").hidden = !closed;
     if (closed) { $("cal-title").textContent = "일기"; renderCalEvents(ymd(new Date()), true); return; }
     const y = calMonth.getFullYear(), mo = calMonth.getMonth();
-    $("cal-title").textContent = `${y}년 ${mo + 1}월`;
+    $("cal-title").innerHTML = `${mo + 1}월<small>${y}</small>`; // month big, year small: fits beside the buttons
     const byDay = new Map();
     for (const m of memos) if (written(m)) (byDay.get(m.diary) || byDay.set(m.diary, []).get(m.diary)).push(m);
     const cur = memos.find((x) => x.id === currentId), selDay = cur && cur.diary;
@@ -973,6 +974,261 @@
     }
     cal.form = day;
     renderDiary();
+  }
+
+  // ---------- 이달의 사진: one stamp per day, the day's cover photo (diary only) ----------
+  const ALBUM_KEY = "cloudmemo.album";
+  const album = Object.assign({ shape: "stamp", filter: "orig", empty: true, bg: "paper" }, lsGet(ALBUM_KEY, {}));
+  let albumMonth = null, albumRun = 0;
+  const TW = 200, TH = 240; // thumbnail pixels (shown at half size, sharp on retina)
+  const ALBUM_OPTS = {
+    shape: [["stamp", "우표"], ["polaroid", "폴라로이드"], ["round", "둥근 사각"], ["circle", "동그라미"]],
+    filter: [["orig", "원본"], ["dot", "도트"], ["halftone", "망점"], ["pastel", "파스텔"]],
+    bg: [["paper", "종이"], ["white", "흰색"], ["theme", "테마"]],
+  };
+  // Cover photo of a diary body: the one marked data-rep, else the first.
+  function coverOf(body) {
+    if (!body || !isHTML(body)) return "";
+    const tpl = document.createElement("template");
+    tpl.innerHTML = body.slice(HTML_MARKER.length);
+    const img = tpl.content.querySelector('img[data-rep="1"]') || tpl.content.querySelector("img[data-img]");
+    const id = img && img.getAttribute("data-img");
+    return id && IMG_ID.test(id) ? id : "";
+  }
+  function monthCovers(y, mo) {
+    const prefix = `${y}-${pad(mo + 1)}-`, out = new Map();
+    let locked = false;
+    for (const m of memos) {
+      if (!isDiary(m) || !m.diary.startsWith(prefix)) continue;
+      const b = bodyOf(m);
+      if (b == null) { locked = true; continue; }
+      const id = coverOf(b);
+      const prev = out.get(m.diary);
+      if (id && (!prev || m.updated > prev.updated)) out.set(m.diary, { id, updated: m.updated });
+    }
+    return { covers: out, locked };
+  }
+  const loadImage = (url) => new Promise((ok, fail) => { const im = new Image(); im.onload = () => ok(im); im.onerror = fail; im.src = url; });
+  function canvasOf(w, h) { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }
+  function coverDraw(g, img, w, h) { // fill w×h, cropping the middle
+    const s = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+    const dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+    g.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  }
+  function smallPixels(img, w, h) {
+    const c = canvasOf(w, h), g = c.getContext("2d", { willReadFrequently: true });
+    g.imageSmoothingQuality = "high";
+    coverDraw(g, img, w, h);
+    return g.getImageData(0, 0, w, h);
+  }
+  // One palette for the whole month (k-means on small samples), so the stamps look like a set.
+  function monthPalette(imgs, k) {
+    const px = [];
+    for (const im of imgs) {
+      const d = smallPixels(im, 20, 24).data;
+      for (let i = 0; i < d.length; i += 4) px.push([d[i], d[i + 1], d[i + 2]]);
+    }
+    if (!px.length) return [[0, 0, 0]];
+    const lum = (p) => p[0] * 0.3 + p[1] * 0.59 + p[2] * 0.11;
+    px.sort((a, b) => lum(a) - lum(b));
+    let cs = Array.from({ length: k }, (_, i) => px[Math.floor((i + 0.5) * px.length / k)].slice());
+    for (let it = 0; it < 8; it++) {
+      const sum = cs.map(() => [0, 0, 0, 0]);
+      for (const p of px) { const j = nearestIdx(cs, p); const s = sum[j]; s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; s[3]++; }
+      cs = cs.map((c, j) => (sum[j][3] ? [sum[j][0] / sum[j][3], sum[j][1] / sum[j][3], sum[j][2] / sum[j][3]] : c));
+    }
+    return cs.map((c) => c.map(Math.round));
+  }
+  function nearestIdx(cs, p) {
+    let best = 0, bd = Infinity;
+    for (let j = 0; j < cs.length; j++) {
+      const c = cs[j], d = (c[0] - p[0]) ** 2 + (c[1] - p[1]) ** 2 + (c[2] - p[2]) ** 2;
+      if (d < bd) { bd = d; best = j; }
+    }
+    return best;
+  }
+  // Thumbnail for one photo with the chosen filter.
+  function stampCanvas(img, filter, pal) {
+    const out = canvasOf(TW, TH), g = out.getContext("2d");
+    if (filter === "dot") { // pixel art: tiny, palette colors, blown up without smoothing
+      const w = 25, h = 30, d = smallPixels(img, w, h);
+      for (let i = 0; i < d.data.length; i += 4) {
+        const c = pal[nearestIdx(pal, [d.data[i], d.data[i + 1], d.data[i + 2]])];
+        d.data[i] = c[0]; d.data[i + 1] = c[1]; d.data[i + 2] = c[2];
+      }
+      const s = canvasOf(w, h); s.getContext("2d").putImageData(d, 0, 0);
+      g.imageSmoothingEnabled = false;
+      g.drawImage(s, 0, 0, TW, TH);
+    } else if (filter === "halftone") { // print dots: bigger where darker, on cream paper
+      const cell = 10, w = TW / cell, h = TH / cell, d = smallPixels(img, w, h).data;
+      g.fillStyle = "#f5efe2"; g.fillRect(0, 0, TW, TH);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4, p = [d[i], d[i + 1], d[i + 2]];
+        const l = (p[0] * 0.3 + p[1] * 0.59 + p[2] * 0.11) / 255;
+        const c = pal[nearestIdx(pal, p)];
+        const r = Math.max(0.9, (cell / 2) * 1.15 * Math.sqrt(1 - l * 0.92));
+        g.fillStyle = `rgb(${c[0]},${c[1]},${c[2]})`;
+        g.beginPath(); g.arc(x * cell + cell / 2 + (y % 2 ? cell / 4 : 0), y * cell + cell / 2, r, 0, Math.PI * 2); g.fill();
+      }
+    } else if (filter === "pastel") { // flat palette colors, softened toward white
+      const w = 80, h = 96, d = smallPixels(img, w, h);
+      for (let i = 0; i < d.data.length; i += 4) {
+        const c = pal[nearestIdx(pal, [d.data[i], d.data[i + 1], d.data[i + 2]])];
+        for (let k = 0; k < 3; k++) d.data[i + k] = Math.round(c[k] * 0.68 + 255 * 0.32);
+      }
+      const s = canvasOf(w, h); s.getContext("2d").putImageData(d, 0, 0);
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+      g.drawImage(s, 0, 0, TW, TH);
+    } else {
+      g.imageSmoothingQuality = "high";
+      coverDraw(g, img, TW, TH);
+    }
+    return out;
+  }
+  function albumOptions() {
+    const seg = (key) => `<div class="seg al-seg" data-k="${key}">` + ALBUM_OPTS[key].map(([v, n]) =>
+      `<button type="button" data-v="${v}" class="${album[key] === v ? "on" : ""}">${n}</button>`).join("") + `</div>`;
+    $("al-opts").innerHTML =
+      `<div class="al-row"><span>모양</span>${seg("shape")}</div>` +
+      `<div class="al-row"><span>필터</span>${seg("filter")}</div>` +
+      `<div class="al-row"><span>배경</span>${seg("bg")}<label class="al-empty"><input type="checkbox" id="al-empty"${album.empty ? " checked" : ""}> 빈 날도</label></div>`;
+  }
+  async function renderAlbum() {
+    const run = ++albumRun;
+    const y = albumMonth.getFullYear(), mo = albumMonth.getMonth();
+    $("al-title").textContent = `${y}년 ${mo + 1}월`;
+    albumOptions();
+    const page = $("al-page");
+    page.className = `al-page bg-${album.bg} shape-${album.shape}`;
+    const { covers, locked } = monthCovers(y, mo);
+    const days = new Date(y, mo + 1, 0).getDate();
+    const list = [];
+    for (let d = 1; d <= days; d++) {
+      const key = `${y}-${pad(mo + 1)}-${pad(d)}`, c = covers.get(key);
+      if (c || album.empty) list.push({ key, d, id: c ? c.id : "", dow: new Date(y, mo, d).getDay() });
+    }
+    $("al-count").textContent = (covers.size ? `사진 ${covers.size}일` : "이 달엔 대표 사진이 아직 없어") + (locked && !vault ? " · 잠긴 일기는 열어야 보여" : "");
+    page.innerHTML = `<div class="al-head">${y}<b>${mo + 1}월</b></div><div class="al-grid">` + list.map((s) =>
+      `<button type="button" class="stp${s.id ? "" : " none"}${s.dow === 0 ? " sun" : s.dow === 6 ? " sat" : ""}" data-day="${s.key}" title="${s.key} 일기 열기"><span class="ph"></span><b>${s.d}</b></button>`).join("") + `</div>`;
+    // Load the photos, then draw them all with one palette.
+    const imgs = new Map();
+    await Promise.all(list.filter((s) => s.id).map(async (s) => {
+      try { const u = await photoSrc(s.id); if (u) imgs.set(s.id, await loadImage(u)); } catch (e) {}
+    }));
+    if (run !== albumRun) return;
+    const pal = album.filter === "orig" ? null : monthPalette([...imgs.values()], album.filter === "dot" ? 12 : 10);
+    for (const s of list) {
+      const im = s.id && imgs.get(s.id), slot = page.querySelector(`[data-day="${s.key}"] .ph`);
+      if (!slot) continue;
+      if (im) slot.replaceChildren(stampCanvas(im, album.filter, pal));
+      else if (s.id) slot.parentElement.classList.add("missing");
+    }
+    albumStamps = { y, mo, list, imgs, pal };
+  }
+  let albumStamps = null;
+  function openAlbum() {
+    if (diaryLocked() && !vault) { unlockVault().then((ok) => { renderAll(); if (ok) openAlbum(); }); return; }
+    albumMonth = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1);
+    $("album").hidden = false;
+    renderAlbum();
+  }
+  function closeAlbum() { $("album").hidden = true; albumRun++; }
+  function saveAlbumOpts() { lsSet(ALBUM_KEY, album); renderAlbum(); }
+
+  // "이미지로 저장": the page drawn on a canvas (same look as the screen) as one PNG.
+  async function albumPNG() {
+    const st = albumStamps;
+    if (!st) return null;
+    const cols = 5, sw = 200, sh = 240, gap = 34, mx = 70, top = 190, bottom = 90;
+    const rows = Math.max(1, Math.ceil(st.list.length / cols));
+    const W = mx * 2 + cols * sw + (cols - 1) * gap, H = top + rows * (sh + gap + (album.shape === "polaroid" ? 28 : 0)) - gap + bottom;
+    const c = canvasOf(W, H), g = c.getContext("2d");
+    const css = getComputedStyle(document.documentElement);
+    const theme = { paper: "#f7f2e7", white: "#ffffff", theme: css.getPropertyValue("--bg").trim() || "#f6f5f2" }[album.bg];
+    g.fillStyle = theme; g.fillRect(0, 0, W, H);
+    if (album.bg === "paper") { g.fillStyle = "rgba(120,100,70,.18)"; for (let y = 24; y < H; y += 24) for (let x = 24; x < W; x += 24) { g.beginPath(); g.arc(x, y, 1.6, 0, 7); g.fill(); } }
+    const ink = album.bg === "theme" ? css.getPropertyValue("--text").trim() || "#222" : "#2b2a28";
+    g.fillStyle = ink; g.textBaseline = "alphabetic";
+    g.font = "500 34px " + css.getPropertyValue("--font"); g.fillText(String(st.y), mx, 92);
+    g.font = "700 64px " + css.getPropertyValue("--font"); g.fillText(`${st.mo + 1}월`, mx, 156);
+    st.list.forEach((s, i) => {
+      const cx = mx + (i % cols) * (sw + gap), cy = top + Math.floor(i / cols) * (sh + gap + (album.shape === "polaroid" ? 28 : 0));
+      const im = s.id && st.imgs.get(s.id);
+      drawStamp(g, cx, cy, sw, sh, im ? stampCanvas(im, album.filter, st.pal) : null, s.d, ink, s.dow);
+    });
+    g.fillStyle = ink; g.globalAlpha = 0.45; g.font = "400 20px " + css.getPropertyValue("--font");
+    g.fillText("클라우드 메모 · 이달의 사진", mx, H - 40); g.globalAlpha = 1;
+    return new Promise((ok) => c.toBlob(ok, "image/png"));
+  }
+  // One stamp on the export canvas. The frame's outer box is w×h (circle: w×w; polaroid: + a
+  // 28px caption strip); the photo fills the inner box, cropped to fit.
+  function drawStamp(g, x, y, w, h, photo, day, ink, dow) {
+    const dayInk = dow === 0 ? "#e03131" : dow === 6 ? "#1971c2" : "#2b2a28"; // Sunday red, Saturday blue
+    const shape = album.shape, font = getComputedStyle(document.documentElement).getPropertyValue("--font");
+    const boxH = shape === "circle" ? w : shape === "polaroid" ? h + 28 : h;
+    const layer = canvasOf(w + 2, boxH + 2), lg = layer.getContext("2d");
+    const P = shape === "stamp" ? 12 : shape === "polaroid" ? 10 : 0;
+    const inner = { x: 1 + P, y: 1 + P, w: w - P * 2, h: (shape === "circle" ? w : h) - P * 2 };
+    lg.save();
+    if (shape === "circle") { lg.beginPath(); lg.arc(w / 2 + 1, w / 2 + 1, w / 2, 0, 7); lg.clip(); }
+    else if (shape === "round") { roundRect(lg, 1, 1, w, h, 22); lg.clip(); }
+    if (P) { lg.fillStyle = "#ffffff"; lg.fillRect(1, 1, w, boxH); }
+    if (photo) { // crop the thumbnail to the inner box's shape
+      const s = Math.max(inner.w / photo.width, inner.h / photo.height), sw = inner.w / s, sh = inner.h / s;
+      lg.drawImage(photo, (photo.width - sw) / 2, (photo.height - sh) / 2, sw, sh, inner.x, inner.y, inner.w, inner.h);
+    } else {
+      lg.fillStyle = "rgba(0,0,0,.05)"; lg.fillRect(inner.x, inner.y, inner.w, inner.h);
+      lg.setLineDash([6, 6]); lg.strokeStyle = "rgba(0,0,0,.25)"; lg.lineWidth = 2;
+      lg.strokeRect(inner.x + 5, inner.y + 5, inner.w - 10, inner.h - 10);
+    }
+    lg.restore();
+    if (shape === "stamp") { // perforated edge
+      lg.globalCompositeOperation = "destination-out";
+      for (let t = 0; t <= w; t += 16) { hole(lg, 1 + t, 1); hole(lg, 1 + t, 1 + h); }
+      for (let t = 0; t <= h; t += 16) { hole(lg, 1, 1 + t); hole(lg, 1 + w, 1 + t); }
+      lg.globalCompositeOperation = "source-over";
+    }
+    lg.font = "700 22px " + font;
+    const label = String(day);
+    if (shape === "polaroid") { lg.textAlign = "right"; lg.fillStyle = dow === 0 || dow === 6 ? dayInk : "#55524c"; lg.fillText(label, w - 8, h + 20); }
+    else {
+      // On a photo the number sits on a small white tab (like a stamp's value) so its color reads.
+      const tw = lg.measureText(label).width + 14, th = 28;
+      const right = shape === "circle" ? w / 2 + 1 + tw / 2 : inner.x + inner.w - 6;
+      const bottom = shape === "circle" ? w - 10 : inner.y + inner.h - 6;
+      if (photo) { lg.fillStyle = "rgba(255,255,255,.92)"; roundRect(lg, right - tw, bottom - th, tw, th, 8); lg.fill(); }
+      lg.fillStyle = photo || dow === 0 || dow === 6 ? dayInk : ink;
+      lg.textAlign = "center";
+      lg.fillText(label, right - tw / 2, bottom - 7);
+    }
+    g.save();
+    g.shadowColor = "rgba(0,0,0,.12)"; g.shadowBlur = 8; g.shadowOffsetY = 2;
+    g.drawImage(layer, x - 1, y - 1);
+    g.restore();
+  }
+  function hole(g, x, y) { g.beginPath(); g.arc(x, y, 5.5, 0, 7); g.fill(); }
+  function roundRect(g, x, y, w, h, r) {
+    g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+  async function saveAlbum() {
+    const btn = $("al-save");
+    btn.disabled = true; btn.textContent = "만드는 중…";
+    try {
+      const blob = await albumPNG();
+      if (!blob) return;
+      const name = `이달의 사진 ${albumStamps.y}-${pad(albumStamps.mo + 1)}.png`;
+      const file = new File([blob], name, { type: "image/png" });
+      if (/iPhone|iPad|Android/i.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: name }).catch(() => {});
+      } else {
+        const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name });
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+        flashMeta("이미지를 저장했어 (다운로드 폴더)");
+      }
+    } catch (e) { alert("이미지를 만들지 못했어: " + ((e && e.message) || e)); }
+    finally { btn.disabled = false; btn.textContent = "이미지로 저장"; }
   }
 
   // ---------- 📅 add a line to Google Calendar (Google's own "new event" page, no permission needed) ----------
@@ -2353,6 +2609,7 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !$("modal").hidden) $("pw-cancel").click();
     else if (e.key === "Escape" && !$("help").hidden) toggleHelp();
+    else if (e.key === "Escape" && !$("album").hidden) closeAlbum();
     else if (e.key === "Escape" && !$("settings").hidden) closeSettings();
   });
   $("folders").addEventListener("click", (e) => {
@@ -2481,6 +2738,34 @@
     afterEdit();
   });
   editor.addEventListener("click", toggleBoxAtCaret);
+  // Tapping a photo: cover photo for the month page (diary), move up/down (phones can't drag), delete.
+  editor.addEventListener("click", (e) => {
+    const img = e.target && e.target.nodeName === "IMG" && e.target.dataset.img ? e.target : null;
+    if (!img) return;
+    const m = memos.find((x) => x.id === currentId);
+    const line = lineOf(img);
+    const prevLine = () => { let p = line && line.previousElementSibling; while (p && p.classList.contains("folded")) p = p.previousElementSibling; return p; };
+    const nextLine = () => { let n = line && line.nextElementSibling; while (n && n.classList.contains("folded")) n = n.nextElementSibling; return n; };
+    const items = [];
+    if (m && isDiary(m)) {
+      const rep = img.dataset.rep === "1" || (!editor.querySelector("img[data-rep]") && editor.querySelector("img[data-img]") === img);
+      items.push({ label: "이 날의 대표 사진", checked: rep, onPick: () => {
+        for (const x of editor.querySelectorAll("img[data-rep]")) x.removeAttribute("data-rep");
+        img.dataset.rep = "1";
+        afterEdit(); flashMeta("대표 사진으로 정했어");
+      } }, "-");
+    }
+    if (prevLine()) items.push({ label: "위로 옮기기", onPick: () => movePhoto(img, { line: prevLine(), after: false }) });
+    if (nextLine()) items.push({ label: "아래로 옮기기", onPick: () => movePhoto(img, { line: nextLine(), after: true }) });
+    items.push({ label: "사진 지우기", danger: true, onPick: () => {
+      const l = lineOf(img);
+      img.remove();
+      if (l && !l.textContent.trim() && !l.querySelector("img,hr")) { if (l.nextElementSibling || l.previousElementSibling) l.remove(); else l.replaceChildren(document.createElement("br")); }
+      afterEdit();
+    } });
+    openMenu(img, items);
+  });
+
   // Dragging a photo inside the memo moves it between lines (a bar shows where it lands).
   // The browser also offers the dragged picture as a "file", so this must win over the
   // file drop below, which would otherwise add a copy.
@@ -2567,6 +2852,20 @@
   $("cal-today").onclick = () => { const t = new Date(); calMonth = new Date(t.getFullYear(), t.getMonth(), 1); openDiary(ymd(t)); };
   $("cal-lock").onclick = (e) => diaryLockMenu(e.currentTarget);
   $("cal-gcal").onclick = (e) => calMenu(e.currentTarget);
+  $("cal-album").hidden = !canPhoto();
+  $("cal-album").onclick = openAlbum;
+  $("al-close").onclick = closeAlbum;
+  $("al-save").onclick = saveAlbum;
+  $("al-prev").onclick = () => { albumMonth = new Date(albumMonth.getFullYear(), albumMonth.getMonth() - 1, 1); renderAlbum(); };
+  $("al-next").onclick = () => { albumMonth = new Date(albumMonth.getFullYear(), albumMonth.getMonth() + 1, 1); renderAlbum(); };
+  $("album").addEventListener("click", (e) => {
+    if (e.target === $("album")) { closeAlbum(); return; }
+    const opt = e.target.closest(".al-seg button[data-v]");
+    if (opt) { album[opt.parentElement.dataset.k] = opt.dataset.v; saveAlbumOpts(); return; }
+    const st = e.target.closest(".stp[data-day]");
+    if (st) { const day = st.dataset.day; closeAlbum(); calMonth = dayOf(day); calMonth.setDate(1); openDiary(day); }
+  });
+  $("album").addEventListener("change", (e) => { if (e.target.id === "al-empty") { album.empty = e.target.checked; saveAlbumOpts(); } });
   $("f-cal").onclick = addToCalendar;
   document.addEventListener("visibilitychange", () => { if (!document.hidden && tab === "diary") calLoad(false); });
   $("diary-unlock").onclick = () => unlockVault().then(renderAll);

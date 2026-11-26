@@ -372,6 +372,64 @@ button[hidden] { display: none !important; }
 #menu .mt svg { vertical-align: -1px; }
 #menu { max-width: min(340px, calc(100vw - 16px)); }
 
+/* ---- 이달의 사진: the month's cover photos as stamps ---- */
+#cal-album { color: var(--muted); }
+.sheet.album { width: min(820px, 100%); max-height: calc(100dvh - 32px); padding: 16px 18px 18px; gap: 12px; }
+.al-top { display: flex; align-items: center; gap: 4px; }
+.al-top h2 { font-size: 18px; min-width: 110px; text-align: center; }
+.al-count { flex: 1; font-size: 12.5px; color: var(--muted); margin-left: 8px; }
+.al-opts { display: grid; gap: 6px; }
+.al-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.al-row > span:first-child { width: 30px; flex: none; }
+.al-seg { display: inline-flex; padding: 2px; }
+.seg.al-seg button { flex: none; padding: 4px 11px; font-size: 13px; white-space: nowrap; }
+.al-empty { display: inline-flex; align-items: center; gap: 5px; margin-left: 6px; color: var(--text); cursor: pointer; }
+.al-empty input { accent-color: var(--accent); margin: 0; }
+.al-scroll { flex: 1; min-height: 0; overflow: auto; border-radius: 12px; }
+.al-page { --ink: #2b2a28; padding: 22px 24px 28px; border-radius: 12px; color: var(--ink); min-height: 200px; }
+.al-page.bg-paper { background: #f7f2e7 radial-gradient(circle, rgba(120, 100, 70, .2) 1px, transparent 1.4px) 0 0 / 14px 14px; }
+.al-page.bg-white { background: #ffffff; }
+.al-page.bg-theme { background: var(--bg); --ink: var(--text); }
+.al-head { font-size: 15px; font-weight: 500; margin-bottom: 14px; line-height: 1.1; }
+.al-head b { display: block; font-size: 32px; font-weight: 700; }
+.al-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 18px 12px; justify-items: center; }
+.stp { position: relative; display: block; padding: 0; border-radius: 0; color: inherit; cursor: pointer; transition: transform .15s; }
+@media (hover: hover) { .stp:hover { transform: translateY(-2px) rotate(-1deg); } }
+.stp .ph { display: block; width: 104px; height: 120px; box-sizing: border-box; }
+.stp canvas { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* Date on a small white tab, like a stamp's value; Sunday red, Saturday blue (as in the calendar). */
+.stp b {
+  position: absolute; right: 10px; bottom: 9px; font-size: 11.5px; font-weight: 700; line-height: 1;
+  color: #2b2a28; background: rgba(255, 255, 255, .92); padding: 3px 5px; border-radius: 5px;
+}
+.stp.sun b { color: #e03131; }
+.stp.sat b { color: #1971c2; }
+.stp.none .ph { background-clip: content-box; }
+.stp.none .ph::after { content: ""; display: block; height: 100%; box-sizing: border-box; border: 1.5px dashed rgba(0, 0, 0, .22); background: rgba(0, 0, 0, .03); }
+.stp.none b, .stp.missing b { background: none; opacity: .75; }
+.stp.none:not(.sun):not(.sat) b, .stp.missing:not(.sun):not(.sat) b { color: var(--ink); }
+/* frames */
+.shape-stamp .stp .ph {
+  background: #fff; padding: 6px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .14));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, radial-gradient(circle at 4px 4px, transparent 2.6px, #000 3px) -4px -4px / 8px 8px;
+          mask: linear-gradient(#000 0 0) content-box, radial-gradient(circle at 4px 4px, transparent 2.6px, #000 3px) -4px -4px / 8px 8px;
+}
+.shape-stamp .stp b { right: 11px; bottom: 9px; }
+.shape-polaroid .stp .ph { background: #fff; padding: 6px 6px 22px; height: 134px; box-shadow: 0 1px 4px rgba(0, 0, 0, .16); border-radius: 2px; }
+.shape-polaroid .stp b { background: none; padding: 0; bottom: 5px; right: 9px; opacity: 1; }
+.shape-polaroid .stp:not(.sun):not(.sat) b { color: #55524c; }
+.shape-round .stp .ph { border-radius: 16px; overflow: hidden; box-shadow: 0 1px 4px rgba(0, 0, 0, .14); }
+.shape-circle .stp .ph { width: 104px; height: 104px; border-radius: 50%; overflow: hidden; box-shadow: 0 1px 4px rgba(0, 0, 0, .14); }
+.shape-circle .stp b { right: auto; left: 50%; transform: translateX(-50%); bottom: 8px; }
+.shape-round .stp.none .ph::after, .shape-circle .stp.none .ph::after { border-radius: inherit; }
+@media (max-width: 520px) {
+  .al-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 14px 8px; }
+  .stp .ph { width: 84px; height: 98px; }
+  .shape-polaroid .stp .ph { height: 112px; }
+  .shape-circle .stp .ph { width: 84px; height: 84px; }
+  .shape-stamp .stp .ph { -webkit-mask-size: auto, 7px 7px; mask-size: auto, 7px 7px; }
+}
+
 /* ---- help sheet (F1): tabs, plain-language rows with keys on the right ---- */
 .sheet.help { width: min(540px, 100%); max-height: calc(100dvh - 32px); padding: 18px 20px 20px; gap: 14px; }
 .help-head { display: flex; align-items: center; justify-content: space-between; margin: -4px -6px -4px 0; }
@@ -507,15 +565,17 @@ section[data-h="tips"] .tips { margin-top: 0; }
 #app.tab-diary .search-wrap, #app.tab-diary #folders, #app.tab-diary #list, #app.tab-diary #btn-new { display: none; }
 #app.tab-diary #diary { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 8px; }
 .cal-head { display: flex; align-items: center; gap: 2px; padding: 0 0 6px 4px; }
-#cal-title { flex: 1; min-width: 0; font-weight: 700; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cal-head .icon-btn { width: 32px; flex: none; }
-.cal-head .text-btn { flex: none; white-space: nowrap; }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 4px; text-align: center; }
+#cal-title { flex: 1 0 auto; font-weight: 700; font-size: 16px; white-space: nowrap; }
+.cal-head .icon-btn { width: 28px; flex: none; }
+.cal-head .text-btn { flex: none; white-space: nowrap; padding-left: 6px; padding-right: 6px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 7px; text-align: center; }
 .cal-grid .wd { font-size: 11.5px; color: var(--muted); padding: 2px 0 4px; }
+/* Circles a bit smaller than their cell, so neighbours (and the today/selected ring) never touch. */
 .day {
-  width: 100%; max-width: 38px; aspect-ratio: 1; margin: 0 auto; border-radius: 50%;
-  display: grid; place-items: center; font-size: 14px; color: var(--text);
+  width: calc(100% - 6px); max-width: 32px; aspect-ratio: 1; margin: 0 auto; border-radius: 50%;
+  display: grid; place-items: center; font-size: 13.5px; color: var(--text);
 }
+#cal-title small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 4px; }
 .cal-grid .sun { color: var(--c-red); }
 .cal-grid .sat { color: var(--c-blue); }
 @media (hover: hover) { .day:hover { background: var(--sel); } }
