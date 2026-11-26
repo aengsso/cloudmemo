@@ -779,6 +779,19 @@ section[data-h="tips"] .tips { margin-top: 0; }
 .sheet input:focus { border-color: var(--accent); }
 .sheet input[hidden] { display: none; }
 #pw-err { color: var(--warn); min-height: 1em; }
+/* ⋯ → 블로그로 옮기기: the text in one copy, then the photos one by one. */
+.blog-copy { z-index: 70; }
+.sheet.bc { width: min(440px, 100%); max-height: calc(100dvh - 32px); overflow: auto; }
+.bc-steps { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 14px; font-size: 14px; line-height: 1.5; }
+.bc-steps li::marker { color: var(--accent); font-weight: 700; }
+.bc-steps li > .text-btn { display: block; margin-top: 8px; font-size: 14px; padding: 7px 14px; }
+.bc-pics { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; margin-top: 8px; }
+.bc-pic { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); padding: 0; background: var(--bg); }
+.bc-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bc-pic span { position: absolute; left: 4px; top: 4px; background: var(--panel); color: var(--text); font-size: 11px; font-weight: 700; border-radius: 10px; padding: 1px 7px; }
+.bc-pic.done { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bc-pic.done::after { content: "복사됨"; position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 600; text-align: center; padding: 2px 0; }
+.sheet.bc .bc-msg { min-height: 1.3em; color: var(--accent); font-weight: 600; }
 /* In-app question / notice / name box (in place of the browser's own prompt, confirm and alert). */
 #ask { z-index: 100; }
 .sheet.ask { position: relative; overflow: hidden; padding-top: 26px; }

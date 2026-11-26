@@ -3315,17 +3315,110 @@
     if (!frag.querySelector || !frag.querySelector("img[data-img]")) return; // no photos: the browser's copy is fine
     copyWithPhotos(frag, s.toString()).catch(() => {});
   }
-  // ⋯ → 사진까지 전체 복사: the whole memo or diary entry, for pasting into a blog.
-  async function copyWhole() {
+  // ---------- ⋯ → 블로그로 옮기기 ----------
+  // Blog editors (Naver's among them) drop pictures that come inside pasted text, but take a
+  // picture pasted on its own or added as a file. So the entry goes over in pieces: the text in
+  // one copy (with [사진 1] where each photo was), then each photo copied alone, or all saved.
+  const canCopyPics = () => !!(navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem === "function");
+  const photoBlob = async (id) => { const u = await photoSrc(id); if (!u) throw new Error("사진을 못 불러왔어"); return (await fetch(u)).blob(); };
+  async function asPNG(blob) { // the one picture type every clipboard takes
+    if (blob.type === "image/png") return blob;
+    const bmp = await createImageBitmap(blob);
+    const c = document.createElement("canvas");
+    c.width = bmp.width; c.height = bmp.height;
+    c.getContext("2d").drawImage(bmp, 0, 0);
+    return new Promise((ok) => c.toBlob(ok, "image/png"));
+  }
+  // Called straight from a tap: the clipboard only takes a write that starts in one.
+  function copyPhoto(id) {
+    if (!canCopyPics()) return Promise.reject(new Error("이 브라우저는 사진 복사를 못 해"));
+    return navigator.clipboard.write([new ClipboardItem({ "image/png": photoBlob(id).then(asPNG) })]);
+  }
+  // The entry's text with formatting, each photo turned into "[사진 N]".
+  function blogPieces() {
+    const box = document.createElement("div");
+    for (const n of editor.childNodes) box.appendChild(n.cloneNode(true));
+    let k = 0;
+    for (const img of [...box.querySelectorAll("img")]) img.replaceWith(img.dataset.img ? `[사진 ${++k}]` : "");
+    for (const el of box.querySelectorAll("*")) {
+      for (const a of [...el.attributes]) if (a.name.startsWith("data-") || a.name === "contenteditable" || a.name === "class") el.removeAttribute(a.name);
+    }
+    const text = [...box.children].map((l) => l.textContent.replace(/​/g, "").trimEnd()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    return { html: box.innerHTML, text };
+  }
+  function openBlogCopy() {
     if (!currentId) return;
-    const frag = document.createDocumentFragment();
-    for (const n of editor.childNodes) frag.appendChild(n.cloneNode(true));
-    const text = linesOf(editor).join("\n");
-    try {
-      flashMeta("복사하는 중…");
-      await copyWithPhotos(frag, text);
-      flashMeta("복사했어. 블로그 글쓰기 화면에 붙여넣기 해 줘");
-    } catch (e) { flashMeta("복사하지 못했어"); }
+    const ids = [...editor.querySelectorAll("img[data-img]")].map((i) => i.dataset.img);
+    const m = memos.find((x) => x.id === currentId), base = (m && m.diary) || ymd(new Date());
+    const phone = /iPhone|iPad|Android/i.test(navigator.userAgent);
+    const ov = document.createElement("div");
+    ov.className = "overlay blog-copy";
+    ov.innerHTML = `<div class="sheet bc" role="dialog" aria-modal="true" aria-labelledby="bc-title">
+      <h2 id="bc-title">블로그로 옮기기</h2>
+      <p>블로그는 글 사이에 섞어 붙여 넣은 사진을 받지 않아. 그래서 글과 사진을 따로 옮겨야 해.</p>
+      <ol class="bc-steps">
+        <li><span>글을 복사해서 블로그에 붙여 넣어. 사진 자리에는 [사진 1]처럼 적혀 있어.</span>
+          <button type="button" class="text-btn primary" data-a="text">글 복사</button></li>
+        ${ids.length ? `<li><span>${canCopyPics() ? "사진을 하나씩 눌러 복사하고, 블로그의 [사진 N] 자리에 붙여 넣어." : "사진을 저장해서 블로그의 사진 버튼으로 넣어 줘."}</span>
+          ${canCopyPics() ? `<div class="bc-pics">${ids.map((id, i) => `<button type="button" class="bc-pic" data-i="${i}" aria-label="사진 ${i + 1} 복사"><img alt=""><span>${i + 1}</span></button>`).join("")}</div>` : ""}
+          <button type="button" class="text-btn" data-a="save">${phone ? `사진 ${ids.length}장 사진 앱에 저장` : `사진 ${ids.length}장 파일로 저장`}</button></li>` : ""}
+      </ol>
+      <p class="bc-msg" role="status"></p>
+      <div class="sheet-btns"><button type="button" class="text-btn primary" data-a="close">닫기</button></div></div>`;
+    $("app").appendChild(ov);
+    const msg = ov.querySelector(".bc-msg"), say = (t) => { msg.textContent = t; };
+    ov.querySelectorAll(".bc-pic img").forEach((im, i) => photoSrc(ids[i]).then((u) => { if (u) im.src = u; }));
+    // Files ready before the tap: a phone's share sheet only opens straight from one.
+    let files = null;
+    const ready = Promise.all(ids.map(async (id, i) => {
+      const b = await photoBlob(id);
+      const ext = b.type === "image/gif" ? "gif" : b.type === "image/png" ? "png" : "jpg";
+      return new File([b], `${base}-${i + 1}.${ext}`, { type: b.type || "image/jpeg" });
+    })).then((f) => (files = f)).catch(() => null);
+    const close = () => { ov.remove(); document.removeEventListener("keydown", onKey, true); };
+    const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
+    document.addEventListener("keydown", onKey, true);
+    ov.addEventListener("click", async (e) => {
+      if (e.target === ov) { close(); return; }
+      const pic = e.target.closest(".bc-pic");
+      if (pic) {
+        const i = +pic.dataset.i;
+        try {
+          say(`${i + 1}번 사진 복사하는 중…`);
+          await copyPhoto(ids[i]);
+          pic.classList.add("done");
+          say(`${i + 1}번 사진을 복사했어. 블로그의 [사진 ${i + 1}] 자리에 붙여 넣어 줘${phone ? "" : " (Ctrl+V)"}.`);
+        } catch (x) { say("사진을 복사하지 못했어. 아래 저장 버튼으로 해 줘."); }
+        return;
+      }
+      const a = e.target.closest("[data-a]");
+      if (!a) return;
+      if (a.dataset.a === "close") { close(); return; }
+      if (a.dataset.a === "text") {
+        const p = blogPieces();
+        try {
+          if (canCopyPics()) await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([p.html], { type: "text/html" }), "text/plain": new Blob([p.text], { type: "text/plain" }) })]);
+          else await navigator.clipboard.writeText(p.text);
+          say("글을 복사했어. 블로그에 붙여 넣어 줘.");
+        } catch (x) { say("글을 복사하지 못했어."); }
+        return;
+      }
+      if (a.dataset.a === "save") {
+        if (!files) { say("사진을 준비하는 중이야. 잠깐 뒤에 다시 눌러 줘."); ready.then(() => { if (files) say("준비됐어. 다시 눌러 줘."); }); return; }
+        if (phone && navigator.canShare && navigator.canShare({ files })) {
+          navigator.share({ files }).then(() => say("저장했어. 블로그 앱에서 사진을 한꺼번에 골라 넣으면 돼."), () => {});
+          return;
+        }
+        for (const f of files) {
+          const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(f), download: f.name });
+          document.body.appendChild(link); link.click(); link.remove();
+          setTimeout(() => URL.revokeObjectURL(link.href), 60000);
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        say(`다운로드 폴더에 ${files.length}장을 저장했어. 블로그의 사진 버튼으로 한꺼번에 넣으면 돼.`);
+      }
+    });
+    setTimeout(() => ov.querySelector('[data-a="text"]').focus(), 30);
   }
   const COPY_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`;
   function hydratePhotos(root) {
@@ -3973,7 +4066,7 @@
       { html: menuRow(menuIcon("btn-font"), "화면 글자 크기", ZOOM[fsIndex].n),
         onPick: () => openMenu(anchor, ZOOM.map((z, i) => ({ label: z.n, checked: i === fsIndex, onPick: () => setZoom(i) }))) },
       { html: menuRow(menuIcon("btn-present"), "발표 모드"), onPick: startPresent },
-      { html: menuRow(COPY_ICON, "사진까지 전체 복사"), onPick: copyWhole },
+      { html: menuRow(COPY_ICON, "블로그로 옮기기"), onPick: openBlogCopy },
       "-",
       { html: menuRow(menuIcon("btn-delete"), "삭제"), danger: true, onPick: deleteCurrent },
     ]));
@@ -4340,6 +4433,9 @@
         afterEdit(); flashMeta("대표 사진으로 정했어");
       } }, { label: img.dataset.fx != null ? "중심 찍기 (찍혀 있음)" : "중심 찍기 (앨범에서 가운데 올 곳)", onPick: () => pickFocus(img) }, "-");
     }
+    if (canCopyPics()) items.push({ label: "이미지로 복사", onPick: () => {
+      copyPhoto(img.dataset.img).then(() => flashMeta("사진을 복사했어. 붙여 넣을 곳에서 붙여넣기 해 줘"), () => flashMeta("사진을 복사하지 못했어"));
+    } });
     if (prevLine()) items.push({ label: "위로 옮기기", onPick: () => movePhoto(img, { line: prevLine(), after: false }) });
     if (nextLine()) items.push({ label: "아래로 옮기기", onPick: () => movePhoto(img, { line: nextLine(), after: true }) });
     items.push({ label: "사진 지우기", danger: true, onPick: () => {
