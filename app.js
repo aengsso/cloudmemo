@@ -978,13 +978,90 @@
 
   // ---------- 이달의 사진: one stamp per day, the day's cover photo (diary only) ----------
   const ALBUM_KEY = "cloudmemo.album";
-  const album = Object.assign({ shape: "stamp", filter: "orig", empty: true, bg: "paper" }, lsGet(ALBUM_KEY, {}));
+  const album = Object.assign({ shape: "stamp", filter: "orig", empty: true, bg: "white", font: "postmark" }, lsGet(ALBUM_KEY, {}));
+  if (album.bg !== "white" && album.bg !== "theme") album.bg = "white"; // the paper background was dropped
+  if (album.filter === "dot") album.filter = "pixel"; // older dot look
+  if (album.filter === "bead" || album.filter === "stitch") album.filter = "halftone"; // folded into 망점
+  // Header styles ("2026 / 11월"). Fonts come from Google Fonts with only the letters used,
+  // loaded when the month page opens; without internet the normal font shows.
+  const HEAD_STYLES = ["postmark", "editorial", "bignum", "typewriter", "serif", "script", "basic"];
+  if (!HEAD_STYLES.includes(album.font)) album.font = "postmark"; // older choices (손글씨 등)
+  const MONTH_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const HEAD_FONTS = {
+    year: '"Josefin Sans", sans-serif', italic: '"Cormorant Garamond", serif', display: '"Playfair Display", serif',
+    type: '"Special Elite", monospace', serif: '"Hahmlet", serif', script: '"Caveat", cursive',
+  };
+  let albumFontsAdded = false;
+  function loadAlbumFonts() {
+    if (albumFontsAdded) return;
+    albumFontsAdded = true;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=Playfair+Display:wght@500" +
+      "&family=Special+Elite&family=Hahmlet:wght@300;500&family=Caveat:wght@600&family=Josefin+Sans:wght@400" +
+      "&text=" + encodeURIComponent("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz월.— ") + "&display=swap";
+    document.head.appendChild(link);
+  }
+  function headerHTML(y, mo) {
+    const en = MONTH_EN[mo], ab = en.slice(0, 3);
+    switch (album.font) {
+      case "editorial": return `<div class="al-head h-ed"><span class="yr">${y}</span><b>${en}</b></div>`;
+      case "bignum": return `<div class="al-head h-big"><b>${mo + 1}</b><span>${en.toUpperCase()}<br>${y}</span></div>`;
+      case "postmark": return `<div class="al-head h-pm"><svg viewBox="0 0 132 80" width="132" height="80" aria-label="${y}년 ${mo + 1}월">
+          <g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="40" cy="40" r="35"/><circle cx="40" cy="40" r="26"/>
+          <path d="M80 28q7-5 14 0t14 0t14 0M80 40q7-5 14 0t14 0t14 0M80 52q7-5 14 0t14 0t14 0"/></g>
+          <text x="40" y="38" text-anchor="middle" font-size="13">${ab.toUpperCase()}</text>
+          <text x="40" y="52" text-anchor="middle" font-size="11">${y}</text></svg></div>`;
+      case "typewriter": return `<div class="al-head h-tw"><b>${ab}. ${y}</b><span>— a month in stamps</span></div>`;
+      case "serif": return `<div class="al-head h-se"><span class="yr">${y}</span><b>${mo + 1}월</b></div>`;
+      case "script": return `<div class="al-head h-sc"><span class="yr">${y}</span><b>${en}</b></div>`;
+      default: return `<div class="al-head">${y}<b>${mo + 1}월</b></div>`;
+    }
+  }
+  // Same header on the saved image (2× the screen size). Returns nothing; draws within y < 175.
+  async function drawAlbumHeader(g, x, y, mo, ink, baseFont) {
+    const en = MONTH_EN[mo], ab = en.slice(0, 3), F = HEAD_FONTS;
+    const spaced = (text, px, py, gap) => { for (const ch of text) { g.fillText(ch, px, py); px += g.measureText(ch).width + gap; } return px; };
+    const need = {
+      editorial: [`400 24px ${F.year}`, `italic 600 92px ${F.italic}`], bignum: [`500 128px ${F.display}`, `400 22px ${F.year}`],
+      postmark: [`400 26px ${F.type}`], typewriter: [`400 64px ${F.type}`], serif: [`300 24px ${F.serif}`, `500 84px ${F.serif}`],
+      script: [`400 24px ${F.year}`, `600 104px ${F.script}`],
+    }[album.font] || [];
+    try { await Promise.all(need.map((f) => document.fonts.load(f, `${y}${en}${mo + 1}월`))); } catch (e) {}
+    g.fillStyle = ink; g.strokeStyle = ink; g.textAlign = "left"; g.textBaseline = "alphabetic";
+    switch (album.font) {
+      case "editorial": g.font = need[0]; spaced(String(y), x, 78, 10); g.font = need[1]; g.fillText(en, x, 162); break;
+      case "bignum": {
+        g.font = need[0]; g.fillText(String(mo + 1), x, 168);
+        const nx = x + g.measureText(String(mo + 1)).width + 22;
+        g.font = need[1]; spaced(en.toUpperCase(), nx, 132, 6); spaced(String(y), nx, 164, 6); break;
+      }
+      case "postmark": {
+        const pm = "#3b4a7a", cx = x + 80, cy = 98;
+        g.save(); g.globalAlpha = 0.88; g.strokeStyle = pm; g.fillStyle = pm; g.lineWidth = 3.6;
+        g.beginPath(); g.arc(cx, cy, 70, 0, 7); g.stroke(); g.beginPath(); g.arc(cx, cy, 52, 0, 7); g.stroke();
+        for (const dy of [-24, 0, 24]) {
+          g.beginPath(); g.moveTo(cx + 80, cy + dy);
+          for (let k = 0; k < 3; k++) { const sx = cx + 80 + k * 28; g.quadraticCurveTo(sx + 7, cy + dy - 10, sx + 14, cy + dy); g.quadraticCurveTo(sx + 21, cy + dy + 10, sx + 28, cy + dy); }
+          g.stroke();
+        }
+        g.textAlign = "center"; g.font = need[0]; g.fillText(ab.toUpperCase(), cx, cy - 4);
+        g.font = `400 22px ${F.type}`; g.fillText(String(y), cx, cy + 24);
+        g.restore(); break;
+      }
+      case "typewriter": g.font = need[0]; g.fillText(`${ab}. ${y}`, x, 132); g.globalAlpha = 0.55; g.font = `400 22px ${F.type}`; g.fillText("— a month in stamps", x, 168); g.globalAlpha = 1; break;
+      case "serif": g.font = need[0]; spaced(String(y), x, 78, 8); g.font = need[1]; g.fillText(`${mo + 1}월`, x, 162); break;
+      case "script": g.font = need[0]; spaced(String(y), x, 78, 10); g.font = need[1]; g.fillText(en, x, 166); break;
+      default: g.font = "500 34px " + baseFont; g.fillText(String(y), x, 92); g.font = "700 64px " + baseFont; g.fillText(`${mo + 1}월`, x, 156);
+    }
+  }
   let albumMonth = null, albumRun = 0;
   const TW = 200, TH = 240; // thumbnail pixels (shown at half size, sharp on retina)
   const ALBUM_OPTS = {
     shape: [["stamp", "우표"], ["polaroid", "폴라로이드"], ["round", "둥근 사각"], ["circle", "동그라미"]],
-    filter: [["orig", "원본"], ["dot", "도트"], ["halftone", "망점"], ["pastel", "파스텔"]],
-    bg: [["paper", "종이"], ["white", "흰색"], ["theme", "테마"]],
+    filter: [["orig", "원본"], ["pixel", "픽셀아트"], ["halftone", "망점"], ["pastel", "파스텔"]],
+    bg: [["white", "흰색"], ["theme", "테마"]],
+    font: [["postmark", "소인"], ["editorial", "이탤릭"], ["bignum", "큰 숫자"], ["typewriter", "타자기"], ["serif", "명조"], ["script", "손글씨"], ["basic", "기본"]],
   };
   // Cover photo of a diary body: the one marked data-rep, else the first.
   function coverOf(body) {
@@ -1028,8 +1105,13 @@
       const d = smallPixels(im, 20, 24).data;
       for (let i = 0; i < d.length; i += 4) px.push([d[i], d[i + 1], d[i + 2]]);
     }
+    return kmeans(px, k);
+  }
+  // k representative colors of a list of [r,g,b] (k-means, 8 rounds, seeded across brightness).
+  function kmeans(px, k) {
     if (!px.length) return [[0, 0, 0]];
     const lum = (p) => p[0] * 0.3 + p[1] * 0.59 + p[2] * 0.11;
+    px = px.slice();
     px.sort((a, b) => lum(a) - lum(b));
     let cs = Array.from({ length: k }, (_, i) => px[Math.floor((i + 0.5) * px.length / k)].slice());
     for (let it = 0; it < 8; it++) {
@@ -1050,12 +1132,19 @@
   // Thumbnail for one photo with the chosen filter.
   function stampCanvas(img, filter, pal) {
     const out = canvasOf(TW, TH), g = out.getContext("2d");
-    if (filter === "dot") { // pixel art: the photo's own colors, a little more vivid, blown up without smoothing
-      const w = 32, h = 38, d = smallPixels(img, w, h);
+    if (filter === "pixel") { // pixel art: strong color, then only 16 colors picked from this photo
+      const w = 32, h = 38, d = smallPixels(img, w, h), px = [];
       for (let i = 0; i < d.data.length; i += 4) {
         const r = d.data[i], gg = d.data[i + 1], b = d.data[i + 2], l = r * 0.3 + gg * 0.59 + b * 0.11;
-        const boost = (v) => Math.max(0, Math.min(255, Math.round((l + (v - l) * 1.25 - 128) * 1.06 + 128)));
-        d.data[i] = boost(r); d.data[i + 1] = boost(gg); d.data[i + 2] = boost(b);
+        const f = (v) => Math.max(0, Math.min(255, Math.round((l + (v - l) * 1.6 - 128) * 1.12 + 128)));
+        const p = [f(r), f(gg), f(b)];
+        d.data[i] = p[0]; d.data[i + 1] = p[1]; d.data[i + 2] = p[2];
+        px.push(p);
+      }
+      const own = kmeans(px, 16);
+      for (let i = 0; i < d.data.length; i += 4) {
+        const c = own[nearestIdx(own, [d.data[i], d.data[i + 1], d.data[i + 2]])];
+        d.data[i] = c[0]; d.data[i + 1] = c[1]; d.data[i + 2] = c[2];
       }
       const s = canvasOf(w, h); s.getContext("2d").putImageData(d, 0, 0);
       g.imageSmoothingEnabled = false;
@@ -1092,6 +1181,7 @@
     $("al-opts").innerHTML =
       `<div class="al-row"><span>모양</span>${seg("shape")}</div>` +
       `<div class="al-row"><span>필터</span>${seg("filter")}</div>` +
+      `<div class="al-row"><span>글씨</span>${seg("font")}</div>` +
       `<div class="al-row"><span>배경</span>${seg("bg")}<label class="al-empty"><input type="checkbox" id="al-empty"${album.empty ? " checked" : ""}> 빈 날도</label></div>`;
   }
   async function renderAlbum() {
@@ -1109,7 +1199,7 @@
       if (c || album.empty) list.push({ key, d, id: c ? c.id : "", dow: new Date(y, mo, d).getDay() });
     }
     $("al-count").textContent = (covers.size ? `사진 ${covers.size}일` : "이 달엔 대표 사진이 아직 없어") + (locked && !vault ? " · 잠긴 일기는 열어야 보여" : "");
-    page.innerHTML = `<div class="al-head">${y}<b>${mo + 1}월</b></div><div class="al-grid">` + list.map((s) =>
+    page.innerHTML = headerHTML(y, mo) + `<div class="al-grid">` + list.map((s) =>
       `<button type="button" class="stp${s.id ? "" : " none"}${s.dow === 0 ? " sun" : s.dow === 6 ? " sat" : ""}" data-day="${s.key}" title="${s.key} 일기 열기"><span class="ph"></span><b>${s.d}</b></button>`).join("") + `</div>`;
     // Load the photos, then draw them all with one palette.
     const imgs = new Map();
@@ -1117,7 +1207,7 @@
       try { const u = await photoSrc(s.id); if (u) imgs.set(s.id, await loadImage(u)); } catch (e) {}
     }));
     if (run !== albumRun) return;
-    const pal = album.filter === "orig" || album.filter === "dot" ? null : monthPalette([...imgs.values()], 10);
+    const pal = album.filter === "halftone" || album.filter === "pastel" ? monthPalette([...imgs.values()], 10) : null;
     for (const s of list) {
       const im = s.id && imgs.get(s.id), slot = page.querySelector(`[data-day="${s.key}"] .ph`);
       if (!slot) continue;
@@ -1130,6 +1220,7 @@
   function openAlbum() {
     if (diaryLocked() && !vault) { unlockVault().then((ok) => { renderAll(); if (ok) openAlbum(); }); return; }
     albumMonth = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1);
+    loadAlbumFonts();
     $("album").hidden = false;
     renderAlbum();
   }
@@ -1145,13 +1236,10 @@
     const W = mx * 2 + cols * sw + (cols - 1) * gap, H = top + rows * (sh + gap + (album.shape === "polaroid" ? 28 : 0)) - gap + bottom;
     const c = canvasOf(W, H), g = c.getContext("2d");
     const css = getComputedStyle(document.documentElement);
-    const theme = { paper: "#f7f2e7", white: "#ffffff", theme: css.getPropertyValue("--bg").trim() || "#f6f5f2" }[album.bg];
-    g.fillStyle = theme; g.fillRect(0, 0, W, H);
-    if (album.bg === "paper") { g.fillStyle = "rgba(120,100,70,.18)"; for (let y = 24; y < H; y += 24) for (let x = 24; x < W; x += 24) { g.beginPath(); g.arc(x, y, 1.6, 0, 7); g.fill(); } }
+    g.fillStyle = album.bg === "theme" ? css.getPropertyValue("--bg").trim() || "#f6f5f2" : "#ffffff";
+    g.fillRect(0, 0, W, H);
     const ink = album.bg === "theme" ? css.getPropertyValue("--text").trim() || "#222" : "#2b2a28";
-    g.fillStyle = ink; g.textBaseline = "alphabetic";
-    g.font = "500 34px " + css.getPropertyValue("--font"); g.fillText(String(st.y), mx, 92);
-    g.font = "700 64px " + css.getPropertyValue("--font"); g.fillText(`${st.mo + 1}월`, mx, 156);
+    await drawAlbumHeader(g, mx, st.y, st.mo, ink, css.getPropertyValue("--font"));
     st.list.forEach((s, i) => {
       const cx = mx + (i % cols) * (sw + gap), cy = top + Math.floor(i / cols) * (sh + gap + (album.shape === "polaroid" ? 28 : 0));
       const im = s.id && st.imgs.get(s.id);
@@ -1168,7 +1256,7 @@
     const shape = album.shape, font = getComputedStyle(document.documentElement).getPropertyValue("--font");
     const boxH = shape === "circle" ? w : shape === "polaroid" ? h + 28 : h;
     const layer = canvasOf(w + 2, boxH + 2), lg = layer.getContext("2d");
-    const P = shape === "stamp" ? 12 : shape === "polaroid" ? 10 : 0;
+    const P = shape === "stamp" ? 16 : shape === "polaroid" ? 10 : 0;
     const inner = { x: 1 + P, y: 1 + P, w: w - P * 2, h: (shape === "circle" ? w : h) - P * 2 };
     lg.save();
     if (shape === "circle") { lg.beginPath(); lg.arc(w / 2 + 1, w / 2 + 1, w / 2, 0, 7); lg.clip(); }
@@ -1185,8 +1273,8 @@
     lg.restore();
     if (shape === "stamp") { // perforated edge
       lg.globalCompositeOperation = "destination-out";
-      for (let t = 0; t <= w; t += 16) { hole(lg, 1 + t, 1); hole(lg, 1 + t, 1 + h); }
-      for (let t = 0; t <= h; t += 16) { hole(lg, 1, 1 + t); hole(lg, 1 + w, 1 + t); }
+      for (let t = 0; t <= w; t += 20) { hole(lg, 1 + t, 1); hole(lg, 1 + t, 1 + h); } // 20px apart: 200×240 ends on a hole
+      for (let t = 0; t <= h; t += 20) { hole(lg, 1, 1 + t); hole(lg, 1 + w, 1 + t); }
       lg.globalCompositeOperation = "source-over";
     }
     lg.font = "700 22px " + font;
@@ -1207,7 +1295,7 @@
     g.drawImage(layer, x - 1, y - 1);
     g.restore();
   }
-  function hole(g, x, y) { g.beginPath(); g.arc(x, y, 5.5, 0, 7); g.fill(); }
+  function hole(g, x, y) { g.beginPath(); g.arc(x, y, 7, 0, 7); g.fill(); }
   function roundRect(g, x, y, w, h, r) {
     g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
     g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
