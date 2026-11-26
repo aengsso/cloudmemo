@@ -1121,7 +1121,7 @@
     }
   }
   // Rubber-stamp wear on a drawn layer: smooth noise (fixed seed) knocks out patches of ink.
-  function wearInk(g, w, h, soft) {
+  function wearInk(g, w, h, soft, scale = 1) { // scale: how big the stamp is drawn (noise shrinks with it)
     const img = g.getImageData(0, 0, w, h), d = img.data;
     const rnd = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
     const noise = (x, y) => { // value noise, bilinear
@@ -1132,7 +1132,7 @@
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 4;
       if (!d[i + 3]) continue;
-      const n = noise(x / 3.2, y / 3.2) * 0.6 + noise(x / 11, y / 11) * 0.4; // fine grain + bigger blotches
+      const n = noise(x / (3.2 * scale), y / (3.2 * scale)) * 0.6 + noise(x / (11 * scale), y / (11 * scale)) * 0.4; // fine grain + bigger blotches
       // Same curves as the screen's SVG filters (pm-wear: 2.05 − 2.6n, pm-wear-soft: 1.75 − 1.6n).
       const keep = Math.max(0, Math.min(1, soft ? 1.75 - 1.6 * n : 2.05 - 2.6 * n));
       d[i + 3] = Math.round(d[i + 3] * keep);
@@ -1158,7 +1158,7 @@
     });
   }
   // Same header on the saved image (2× the screen size). Returns nothing; draws within y < 190.
-  async function drawAlbumHeader(g, x, y, mo, ink, baseFont, days) {
+  async function drawAlbumHeader(g, x, y, mo, ink, baseFont, days, pmScale = 1) {
     const en = MONTH_EN[mo], ab = en.slice(0, 3), F = HEAD_FONTS;
     const spaced = (text, px, py, gap) => { for (const ch of text) { g.fillText(ch, px, py); px += g.measureText(ch).width + gap; } return px; };
     const need = {
@@ -1177,7 +1177,7 @@
       }
       case "postmark": { // the screen's SVG postmark (220×108 units) redrawn K× larger, then worn like a rubber stamp
         const [ir, ig, ib] = pmInkRGB(), pm = `rgb(${ir},${ig},${ib})`;
-        const K = 460 / 220, S = 1.35, LW = Math.ceil(220 * K * S), LH = Math.ceil(108 * K * S); // K: units → canvas px, S: size up
+        const K = 460 / 220, S = 1.35 * pmScale, LW = Math.ceil(220 * K * S), LH = Math.ceil(108 * K * S); // K: units → canvas px, S: size up
         const layer = canvasOf(LW, LH), lg = layer.getContext("2d");
         lg.scale(S * K, S * K); // from here on, draw in the SVG's own units
         lg.strokeStyle = pm; lg.fillStyle = pm; lg.lineWidth = 2; lg.lineCap = "butt";
@@ -1194,7 +1194,7 @@
         if (mid && hasEmoji(mid)) { // emoji: same pre-inked picture as the screen, gentle wear
           try { await document.fonts.load(`700 ${midSize}px ${PM_FONT}`, mid); } catch (e) {}
           const q = K * S * 1.5, pic = inkPicture(mid, Math.round(midSize * q), [ir, ig, ib]);
-          wearInk(pic.getContext("2d"), pic.width, pic.height, true);
+          wearInk(pic.getContext("2d"), pic.width, pic.height, true, pmScale);
           const pw = pic.width / q, ph = pic.height / q;
           emojiLater = () => lg.drawImage(pic, 54 - pw / 2, 54 - ph / 2, pw, ph);
         } else if (mid) { // plain text: same ink as the month and year
@@ -1204,7 +1204,7 @@
         } else { // cloud: translate(54 54) scale(1.3), stroke 1.7
           lg.save(); lg.translate(54, 54); lg.scale(1.3, 1.3); lg.lineWidth = 1.7; lg.lineJoin = "round"; lg.lineCap = "round"; lg.stroke(new Path2D(CLOUD_PATH)); lg.restore();
         }
-        wearInk(lg, LW, LH);
+        wearInk(lg, LW, LH, false, pmScale);
         if (emojiLater) emojiLater();
         g.save(); g.globalAlpha = 0.9; g.drawImage(layer, x, 0); g.restore();
         break;
@@ -1372,6 +1372,8 @@
       const key = `${y}-${pad(mo + 1)}-${pad(d)}`, c = covers.get(key);
       if (c || album.empty) list.push({ key, d, id: c ? c.id : "", dow: new Date(y, mo, d).getDay() });
     }
+    page.classList.toggle("few", list.length > 0 && list.length <= ALBUM_FEW);
+    page.style.setProperty("--pm", pmScaleFor(list.length));
     $("al-count").textContent = (covers.size ? `사진 ${covers.size}일` : "이 달엔 대표 사진이 아직 없어") + (locked && !vault ? " · 잠긴 일기는 열어야 보여" : "");
     page.innerHTML = headerHTML(y, mo, covers.size) + `<div class="al-grid">` + list.map((s) =>
       `<button type="button" class="stp${s.id ? "" : " none"}${s.dow === 0 ? " sun" : s.dow === 6 ? " sat" : ""}" data-day="${s.key}" title="${s.key} 일기 열기"><span class="ph"></span><b>${s.d}</b></button>`).join("") + `</div>`;
@@ -1402,25 +1404,47 @@
   function saveAlbumOpts() { lsSet(ALBUM_KEY, album); renderAlbum(); }
 
   // "이미지로 저장": the page drawn on a canvas (same look as the screen) as one PNG.
+  const ALBUM_FEW = 5; // up to this many stamps: one centered row (screen and saved image)
+  // Postmark size for a short row, so it doesn't tower over one or two stamps: about the row's
+  // width, never under 60%. Measured on the saved image (stamps 200 wide, 34 apart; postmark 621).
+  const pmScaleFor = (n) => n > 0 && n <= ALBUM_FEW ? Math.max(0.6, Math.min(1, (n * 200 + (n - 1) * 34) / (621 * 1.1))) : 1;
+  // Left edge and width of what was drawn on a canvas (alpha > 0).
+  function inkBounds(g, w, h) {
+    const d = g.getImageData(0, 0, w, h).data;
+    let x0 = w, x1 = -1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; }
+    return x1 < 0 ? { x: 0, w: 0 } : { x: x0, w: x1 - x0 + 1 };
+  }
   async function albumPNG() {
     const st = albumStamps;
     if (!st) return null;
-    const cols = 5, sw = 200, sh = 240, gap = 34, mx = 70, top = album.font === "postmark" ? 325 : 190, bottom = 90;
-    const rows = Math.max(1, Math.ceil(st.list.length / cols));
-    const W = mx * 2 + cols * sw + (cols - 1) * gap, H = top + rows * (sh + gap + (album.shape === "polaroid" ? 28 : 0)) - gap + bottom;
-    const c = canvasOf(W, H), g = c.getContext("2d");
+    const n = st.list.length, few = n > 0 && n <= ALBUM_FEW; // a handful of photos: one centered row, page sized to fit
+    const pm = pmScaleFor(n);
+    const sw = 200, sh = 240, gap = 34, mx = 70, top = album.font === "postmark" ? Math.round(305 * pm) + 20 : 190, bottom = 90;
+    const cols = few ? n : 5;
+    const rows = Math.max(1, Math.ceil(n / cols));
     const css = getComputedStyle(document.documentElement);
+    const ink = album.bg === "theme" ? css.getPropertyValue("--text").trim() || "#222" : "#2b2a28";
+    // Header drawn apart first, so a small page can be sized around it and center it.
+    const hc = canvasOf(1600, top), hg = hc.getContext("2d", { willReadFrequently: true });
+    await drawAlbumHeader(hg, 0, st.y, st.mo, ink, css.getPropertyValue("--font"), st.days, pm);
+    const hb = inkBounds(hg, 1600, top);
+    const gridW = cols * sw + (cols - 1) * gap;
+    const contentW = few ? Math.max(gridW, hb.w, 560) : 5 * sw + 4 * gap;
+    const W = mx * 2 + contentW, H = top + rows * (sh + gap + (album.shape === "polaroid" ? 28 : 0)) - gap + bottom;
+    const c = canvasOf(W, H), g = c.getContext("2d");
     g.fillStyle = album.bg === "theme" ? css.getPropertyValue("--bg").trim() || "#f6f5f2" : "#ffffff";
     g.fillRect(0, 0, W, H);
-    const ink = album.bg === "theme" ? css.getPropertyValue("--text").trim() || "#222" : "#2b2a28";
-    await drawAlbumHeader(g, mx, st.y, st.mo, ink, css.getPropertyValue("--font"), st.days);
+    g.drawImage(hc, few ? Math.round((W - hb.w) / 2) - hb.x : mx, 0);
+    const gx = few ? Math.round((W - gridW) / 2) : mx;
     st.list.forEach((s, i) => {
-      const cx = mx + (i % cols) * (sw + gap), cy = top + Math.floor(i / cols) * (sh + gap + (album.shape === "polaroid" ? 28 : 0));
+      const cx = gx + (i % cols) * (sw + gap), cy = top + Math.floor(i / cols) * (sh + gap + (album.shape === "polaroid" ? 28 : 0));
       const im = s.id && st.imgs.get(s.id);
       drawStamp(g, cx, cy, sw, sh, im ? stampCanvas(im, album.filter, st.pal) : null, s.d, ink, s.dow);
     });
     g.fillStyle = ink; g.globalAlpha = 0.45; g.font = "400 20px " + css.getPropertyValue("--font");
-    g.fillText("클라우드 메모 · 이달의 사진", mx, H - 40); g.globalAlpha = 1;
+    g.textAlign = few ? "center" : "left";
+    g.fillText("클라우드 메모 · 이달의 사진", few ? W / 2 : mx, H - 40); g.globalAlpha = 1; g.textAlign = "left";
     return new Promise((ok) => c.toBlob(ok, "image/png"));
   }
   // One stamp on the export canvas. The frame's outer box is w×h (circle: w×w; polaroid: + a

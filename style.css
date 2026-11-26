@@ -397,7 +397,7 @@ button[hidden] { display: none !important; }
 .h-big { display: flex; align-items: flex-end; gap: 11px; }
 .h-big b { font-family: "Playfair Display", serif; font-weight: 500; font-size: 64px; line-height: .82; }
 .h-big span { font-family: "Josefin Sans", var(--font); font-size: 11px; letter-spacing: 3px; line-height: 1.5; }
-.h-pm svg { display: block; opacity: .9; font-family: "Special Elite", "Nanum Gothic Coding", monospace; max-width: 100%; height: auto; }
+.h-pm svg { display: block; opacity: .9; width: calc(297px * var(--pm, 1)); font-family: "Special Elite", "Nanum Gothic Coding", monospace; max-width: 100%; height: auto; }
 .h-pm .pm-mid { font-weight: 700; }
 .al-pm input {
   font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--line);
@@ -413,6 +413,10 @@ button[hidden] { display: none !important; }
 .h-se b { font-family: "Hahmlet", serif; font-weight: 500; font-size: 42px; line-height: 1.05; }
 .h-sc b { font-family: "Caveat", cursive; font-weight: 600; font-size: 52px; line-height: 1; }
 .al-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 18px 12px; justify-items: center; }
+/* A handful of photos: header and one row in the middle, so the page doesn't look empty on one side. */
+.al-page.few .al-head { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.al-page.few .al-head.h-big { flex-direction: row; justify-content: center; text-align: left; }
+.al-page.few .al-grid { grid-template-columns: repeat(auto-fit, 108px); justify-content: center; gap: 18px 22px; }
 .stp { position: relative; display: block; padding: 0; border-radius: 0; color: inherit; cursor: pointer; transition: transform .15s; }
 /* Lift only: rotating would make the perforated edge jagged. */
 @media (hover: hover) {
@@ -455,6 +459,7 @@ button[hidden] { display: none !important; }
 @media (max-width: 520px) {
   .al-page { padding: 16px 14px 20px; }
   .al-grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 14px 6px; }
+  .al-page.few .al-grid { grid-template-columns: repeat(auto-fit, 80px); gap: 14px 10px; }
   .stp .ph { width: 80px; height: 92px; }
   .shape-polaroid .stp .ph { height: 106px; }
   .shape-circle .stp .ph { width: 80px; height: 80px; }
