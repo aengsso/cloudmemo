@@ -779,3 +779,59 @@ section[data-h="tips"] .tips { margin-top: 0; }
 }
 
 #al-save-gif[hidden] { display: none; }
+
+/* ---------- tidy layout: less used buttons open from ⋯ menus ---------- */
+.in-more { display: none !important; }
+#menu .mi-ico { flex: none; width: 22px; height: 20px; display: inline-flex; align-items: center; justify-content: center; margin-right: 10px; color: var(--muted); font-size: 15px; }
+#menu .mi-ico svg { width: 18px; height: 18px; }
+#menu .mi-ico .size-ico small { font-size: .7em; }
+#menu .mi-txt { flex: 1; }
+#menu button.danger .mi-ico { color: inherit; }
+/* Diary: "이달의 사진" as a clear button under the calendar. */
+.album-btn {
+  display: flex; align-items: center; justify-content: center; gap: 7px; width: calc(100% - 8px); margin: 10px 4px 4px;
+  padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel);
+  color: var(--text); font-size: 14px; font-weight: 500;
+}
+.album-btn svg { color: var(--accent); }
+@media (hover: hover) { .album-btn:hover { border-color: var(--accent); } }
+.album-btn[hidden], #diary.locked .album-btn { display: none; }
+/* Settings in groups. */
+.set-group { display: flex; flex-direction: column; gap: 8px; padding: 14px 0; border-top: 1px solid var(--line); }
+.set-group:first-of-type { border-top: 0; padding-top: 4px; }
+.set-group h3 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .02em; color: var(--accent); }
+.set-group .set-label { margin-top: 2px; }
+.set-info { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.set-info .text-btn { margin-left: auto; }
+/* Album: options open from "꾸미기". */
+.al-deco { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.al-deco svg { transition: transform .15s; }
+.sheet.album.deco-open .al-deco { color: var(--accent); }
+.sheet.album.deco-open .al-deco svg { transform: rotate(180deg); }
+.sheet.album:not(.deco-open) .al-opts { display: none; }
+
+/* Album shape "티켓": one strip of tickets that touch, a round notch at every joint, and the
+   month's last ticket torn off and lying a little crooked. */
+.al-page.bg-white { --pbg: #ffffff; }
+.al-page.bg-theme { --pbg: var(--bg); }
+.shape-ticket .al-grid { grid-template-columns: repeat(auto-fill, 99px); gap: 26px 0; justify-content: start; padding-left: 1px; }
+.al-page.few.shape-ticket .al-grid { grid-template-columns: repeat(auto-fit, 99px); gap: 26px 0; justify-content: center; }
+.shape-ticket .stp { margin-left: -1px; }
+.shape-ticket .stp .ph { width: 100px; height: 140px; box-sizing: border-box; border: 1px solid rgba(0, 0, 0, .2); overflow: hidden; background: #f3f1ec; }
+.shape-ticket .stp::before, .shape-ticket .stp::after {
+  content: ""; position: absolute; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%;
+  background: var(--pbg); border: 1px solid rgba(0, 0, 0, .2); box-sizing: border-box; z-index: 1;
+}
+.shape-ticket .stp::before { left: -6px; }
+.shape-ticket .stp::after { right: -6px; }
+.shape-ticket .stp.none .ph::after { border: 0; background: none; }
+.shape-ticket .stp b { right: 7px; bottom: 7px; }
+.shape-ticket .stp:hover { transform: none; filter: none; }
+.shape-ticket .stp.torn, .shape-ticket .stp.torn:hover { transform: translate(11px, 3px) rotate(6deg); z-index: 2; }
+@media (max-width: 520px) {
+  .shape-ticket .al-grid, .al-page.few.shape-ticket .al-grid { grid-template-columns: repeat(auto-fill, 79px); gap: 20px 0; }
+  .al-page.few.shape-ticket .al-grid { grid-template-columns: repeat(auto-fit, 79px); }
+  .shape-ticket .stp .ph { width: 80px; height: 112px; }
+}
+.al-count { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+@media (max-width: 520px) { .al-top h2 { min-width: 0; font-size: 16px; } .al-count { visibility: hidden; } }

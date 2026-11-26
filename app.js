@@ -1237,7 +1237,7 @@
   let albumMonth = null, albumRun = 0;
   const TW = 200, TH = 240; // thumbnail pixels (shown at half size, sharp on retina)
   const ALBUM_OPTS = {
-    shape: [["stamp", "우표"], ["polaroid", "폴라로이드"], ["round", "둥근 사각"], ["circle", "동그라미"]],
+    shape: [["stamp", "우표"], ["ticket", "티켓"], ["polaroid", "폴라로이드"], ["round", "둥근 사각"], ["circle", "동그라미"]],
     filter: [["orig", "원본"], ["pixel", "픽셀아트"], ["halftone", "망점"], ["pastel", "파스텔"]],
     bg: [["white", "흰색"], ["theme", "테마"]],
     font: [["basic", "기본"], ["postmark", "우체국 소인"], ["editorial", "영문 이탤릭"], ["bignum", "큰 숫자"], ["typewriter", "타자기"], ["serif", "명조"], ["script", "영문 손글씨"]],
@@ -1397,8 +1397,8 @@
     page.classList.toggle("few", list.length > 0 && list.length <= ALBUM_FEW);
     page.style.setProperty("--pm", pmScaleFor(list.length));
     $("al-count").textContent = (covers.size ? `사진 ${covers.size}일` : "이 달엔 대표 사진이 아직 없어") + (locked && !vault ? " · 잠긴 일기는 열어야 보여" : "");
-    page.innerHTML = headerHTML(y, mo, covers.size) + `<div class="al-grid">` + list.map((s) =>
-      `<button type="button" class="stp${s.id ? "" : " none"}${s.dow === 0 ? " sun" : s.dow === 6 ? " sat" : ""}" data-day="${s.key}" title="${s.key} 일기 열기"><span class="ph"></span><b>${s.d}</b></button>`).join("") + `</div>`;
+    page.innerHTML = headerHTML(y, mo, covers.size) + `<div class="al-grid">` + list.map((s, i) =>
+      `<button type="button" class="stp${s.id ? "" : " none"}${tornAt(i, list.length) ? " torn" : ""}${s.dow === 0 ? " sun" : s.dow === 6 ? " sat" : ""}" data-day="${s.key}" title="${s.key} 일기 열기"><span class="ph"></span><b>${s.d}</b></button>`).join("") + `</div>`;
     // Load the photos, then draw them all with one palette.
     const imgs = new Map(), gifs = new Map();
     await Promise.all(list.filter((s) => s.id).map(async (s) => {
@@ -1457,6 +1457,9 @@
 
   // "이미지로 저장": the page drawn on a canvas (same look as the screen) as one PNG.
   const ALBUM_FEW = 5; // up to this many stamps: one centered row (screen and saved image)
+  // Tickets: one long strip; the month's last ticket is torn off and lies a little crooked.
+  const tornAt = (i, n) => album.shape === "ticket" && n > 1 && i === n - 1;
+  const TORN = { dx: 22, deg: 6 };
   // Postmark size for a short row, so it doesn't tower over one or two stamps: about the row's
   // width, never under 60%. Measured on the saved image (stamps 200 wide, 34 apart; postmark 621).
   const pmScaleFor = (n) => n > 0 && n <= ALBUM_FEW ? Math.max(0.6, Math.min(1, (n * 200 + (n - 1) * 34) / (621 * 1.1))) : 1;
@@ -1477,7 +1480,8 @@
     if (!st) return null;
     const n = st.list.length, few = n > 0 && n <= ALBUM_FEW; // a handful of photos: one centered row, page sized to fit
     const pm = pmScaleFor(n);
-    const sw = 200, sh = 240, gap = 34, mx = 70, top = album.font === "postmark" ? Math.round(305 * pm) + 20 : 190, bottom = 90;
+    const ticket = album.shape === "ticket";
+    const sw = 200, sh = ticket ? 280 : 240, gap = ticket ? 0 : 34, gapY = ticket ? 40 : 34, mx = 70, top = album.font === "postmark" ? Math.round(305 * pm) + 20 : 190, bottom = 90;
     const cols = few ? n : 5;
     const rows = Math.max(1, Math.ceil(n / cols));
     const css = getComputedStyle(document.documentElement);
@@ -1487,19 +1491,21 @@
     await drawAlbumHeader(hg, 0, st.y, st.mo, ink, css.getPropertyValue("--font"), st.days, pm);
     const hb = inkBounds(hg, 1600, top);
     const gridW = cols * sw + (cols - 1) * gap;
-    const contentW = few ? Math.max(gridW, hb.w, 560) : 5 * sw + 4 * gap;
-    const W = mx * 2 + contentW, H = top + rows * (sh + gap + (album.shape === "polaroid" ? 28 : 0)) - gap + bottom;
+    const contentW = (few ? Math.max(gridW, hb.w, 560) : 5 * sw + 4 * gap) + (ticket && n > 1 ? TORN.dx + 16 : 0);
+    const W = mx * 2 + contentW, H = top + rows * (sh + gapY + (album.shape === "polaroid" ? 28 : 0)) - gapY + bottom;
     const c = canvasOf(W, H), g = c.getContext("2d", { willReadFrequently: true });
     const bg = album.bg === "theme" ? css.getPropertyValue("--bg").trim() || "#f6f5f2" : "#ffffff";
     g.fillStyle = bg;
     g.fillRect(0, 0, W, H);
     g.drawImage(hc, few ? Math.round((W - hb.w) / 2) - hb.x : mx, 0);
-    const gx = few ? Math.round((W - gridW) / 2) : mx, slots = [];
+    const gx = few ? Math.round((W - gridW - (ticket && n > 1 ? TORN.dx : 0)) / 2) : mx, slots = [];
     st.list.forEach((s, i) => {
-      const cx = gx + (i % cols) * (sw + gap), cy = top + Math.floor(i / cols) * (sh + gap + (album.shape === "polaroid" ? 28 : 0));
+      const torn = tornAt(i, n);
+      const cx = gx + (i % cols) * (sw + gap) + (torn ? TORN.dx : 0), cy = top + Math.floor(i / cols) * (sh + gapY + (album.shape === "polaroid" ? 28 : 0));
       const im = s.id && st.imgs.get(s.id), a = s.id && st.anims && st.anims.get(s.id);
-      drawStamp(g, cx, cy, sw, sh, a ? a.frames[0] : im ? stampCanvas(im, album.filter, st.pal) : null, s.d, ink, s.dow);
-      if (a) slots.push({ s, a, cx, cy });
+      const tilt = torn ? TORN.deg : 0;
+      drawStamp(g, cx, cy, sw, sh, a ? a.frames[0] : im ? stampCanvas(im, album.filter, st.pal) : null, s.d, ink, s.dow, tilt);
+      if (a) slots.push({ s, a, cx, cy, tilt });
     });
     g.fillStyle = ink; g.globalAlpha = 0.45; g.font = "400 20px " + css.getPropertyValue("--font");
     g.textAlign = few ? "center" : "left";
@@ -1519,10 +1525,12 @@
     if (total / step > 60) step = Math.ceil(total / 60);
     const nF = Math.max(2, Math.round(total / step));
     const frameAt = (a, t) => { t %= dur(a); for (let i = 0; i < a.delays.length; i++) { if (t < a.delays[i]) return i; t -= a.delays[i]; } return 0; };
-    const boxH = album.shape === "circle" ? sw : album.shape === "polaroid" ? sh + 28 : sh, M = 16;
+    const boxH = album.shape === "circle" ? sw : album.shape === "polaroid" ? sh + 28 : sh;
+    const margin = (x) => album.shape !== "ticket" ? 16 : x.tilt ? 20 : 0;
     const redraw = (x, k) => { // clear the stamp's spot (and its shadow), draw frame k
+      const M = margin(x);
       g.fillStyle = bg; g.fillRect(x.cx - M, x.cy - M, sw + 2 * M, boxH + 2 * M);
-      drawStamp(g, x.cx, x.cy, sw, sh, x.a.frames[k], x.s.d, ink, x.s.dow);
+      drawStamp(g, x.cx, x.cy, sw, sh, x.a.frames[k], x.s.d, ink, x.s.dow, x.tilt);
     };
     // One palette for the whole animation: the page plus every frame of the moving stamps.
     const sample = [];
@@ -1548,6 +1556,7 @@
         const k = frameAt(x.a, t);
         if (k === shown[i]) return;
         shown[i] = k; redraw(x, k);
+        const M = margin(x);
         x0 = Math.min(x0, x.cx - M); y0 = Math.min(y0, x.cy - M); x1 = Math.max(x1, x.cx + sw + M); y1 = Math.max(y1, x.cy + boxH + M);
       });
       if (x1 <= x0) { frames[frames.length - 1].delay += step; continue; } // nothing moved
@@ -1565,7 +1574,7 @@
   }
   // One stamp on the export canvas. The frame's outer box is w×h (circle: w×w; polaroid: + a
   // 28px caption strip); the photo fills the inner box, cropped to fit.
-  function drawStamp(g, x, y, w, h, photo, day, ink, dow) {
+  function drawStamp(g, x, y, w, h, photo, day, ink, dow, tilt = 0) {
     const dayInk = dow === 0 ? "#e03131" : dow === 6 ? "#1971c2" : "#2b2a28"; // Sunday red, Saturday blue
     const shape = album.shape, font = getComputedStyle(document.documentElement).getPropertyValue("--font");
     const boxH = shape === "circle" ? w : shape === "polaroid" ? h + 28 : h;
@@ -1579,12 +1588,22 @@
     if (photo) { // crop the thumbnail to the inner box's shape
       const s = Math.max(inner.w / photo.width, inner.h / photo.height), sw = inner.w / s, sh = inner.h / s;
       lg.drawImage(photo, (photo.width - sw) / 2, (photo.height - sh) / 2, sw, sh, inner.x, inner.y, inner.w, inner.h);
+    } else if (shape === "ticket") { // an empty ticket: plain paper
+      lg.fillStyle = "#f3f1ec"; lg.fillRect(inner.x, inner.y, inner.w, inner.h);
     } else {
       lg.fillStyle = "rgba(0,0,0,.05)"; lg.fillRect(inner.x, inner.y, inner.w, inner.h);
       lg.setLineDash([6, 6]); lg.strokeStyle = "rgba(0,0,0,.25)"; lg.lineWidth = 2;
       lg.strokeRect(inner.x + 5, inner.y + 5, inner.w - 10, inner.h - 10);
     }
     lg.restore();
+    if (shape === "ticket") { // fine outline, and a round notch in the middle of each side (shared with the next ticket)
+      const R = 12, notch = (ex) => { lg.beginPath(); lg.arc(ex, 1 + h / 2, R, 0, Math.PI * 2); };
+      lg.strokeStyle = "rgba(0,0,0,.22)"; lg.lineWidth = 2; lg.strokeRect(1, 1, w, h);
+      lg.globalCompositeOperation = "destination-out";
+      notch(1); lg.fill(); notch(1 + w); lg.fill();
+      lg.globalCompositeOperation = "source-over";
+      notch(1); lg.stroke(); notch(1 + w); lg.stroke();
+    }
     if (shape === "stamp") { // perforated edge
       lg.globalCompositeOperation = "destination-out";
       for (let t = 0; t <= w; t += 20) { hole(lg, 1 + t, 1); hole(lg, 1 + t, 1 + h); } // 20px apart: 200×240 ends on a hole
@@ -1604,11 +1623,16 @@
       lg.textAlign = "center";
       lg.fillText(label, right - tw / 2, bottom - 7);
     }
-    g.save(); // faint outline (so a white stamp shows on white), then a soft shadow
-    g.shadowColor = "rgba(0,0,0,.07)"; g.shadowBlur = 8; g.shadowOffsetY = 2;
-    g.drawImage(layer, x - 1, y - 1);
-    g.shadowColor = "rgba(0,0,0,.16)"; g.shadowBlur = 1.4; g.shadowOffsetY = 0;
-    g.drawImage(layer, x - 1, y - 1);
+    g.save();
+    if (tilt) { g.translate(x + w / 2, y + boxH / 2); g.rotate((tilt * Math.PI) / 180); g.translate(-(x + w / 2), -(y + boxH / 2)); }
+    if (shape === "ticket") { // flat paper: its own outline, no shadow (tickets touch their neighbors)
+      g.drawImage(layer, x - 1, y - 1);
+    } else { // faint outline (so a white stamp shows on white), then a soft shadow
+      g.shadowColor = "rgba(0,0,0,.07)"; g.shadowBlur = 8; g.shadowOffsetY = 2;
+      g.drawImage(layer, x - 1, y - 1);
+      g.shadowColor = "rgba(0,0,0,.16)"; g.shadowBlur = 1.4; g.shadowOffsetY = 0;
+      g.drawImage(layer, x - 1, y - 1);
+    }
     g.restore();
   }
   function hole(g, x, y) { g.beginPath(); g.arc(x, y, 7, 0, 7); g.fill(); }
@@ -2888,12 +2912,13 @@
   let fsIndex = 1;
   try { const i = +prefStore.getItem(FS_KEY); if (prefStore.getItem(FS_KEY) != null && ZOOM[i]) fsIndex = i; } catch (e) {}
   function applyZoom() { document.documentElement.style.setProperty("--fs", ZOOM[fsIndex].s); }
-  function cycleZoom() {
-    fsIndex = (fsIndex + 1) % ZOOM.length;
+  function setZoom(i) {
+    fsIndex = i;
     applyZoom();
     try { prefStore.setItem(FS_KEY, String(fsIndex)); } catch (e) {}
     flashMeta("화면 글자 크기: " + ZOOM[fsIndex].n);
   }
+  const cycleZoom = () => setZoom((fsIndex + 1) % ZOOM.length);
   applyZoom();
 
   // ---------- appearance: mode / theme / accent (per device) ----------
@@ -2966,6 +2991,7 @@
   function openSettings() {
     renderSettings(); renderWxSettings();
     $("set-ver").textContent = UI_VER ? `· 버전 ${UI_VER}` : "";
+    $("settings").querySelector(".sheet").scrollTop = 0;
     $("settings").hidden = false;
   }
   function closeSettings() { $("settings").hidden = true; }
@@ -3269,6 +3295,45 @@
   }, true);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !menu.hidden) closeMenu(); });
 
+  // ---------- ⋯ menus: the less used buttons stay in the page (hidden, .in-more) and open from here ----------
+  const menuIcon = (id) => { const el = $(id) && $(id).firstElementChild; return el ? el.outerHTML : ""; };
+  const menuRow = (icon, label, key) => `<span class="mi-ico">${icon}</span><span class="mi-txt">${esc(label)}</span>${key ? `<kbd>${esc(key)}</kbd>` : ""}`;
+  function moreItem(id, label, key, anchor) {
+    const b = $(id);
+    if (!b || b.hidden) return null;
+    return { html: menuRow(menuIcon(id), label, key), onPick: () => b.onclick && b.onclick({ currentTarget: anchor, target: anchor, preventDefault() {} }) };
+  }
+  // Drops empty entries and separators that would start, end or double up.
+  const tidyItems = (items) => items.filter(Boolean).filter((it, i, a) => it !== "-" || (i > 0 && i < a.length - 1 && a[i - 1] !== "-"));
+  function fmtMoreMenu(anchor) {
+    const it = (id, label, key) => moreItem(id, label, key, anchor);
+    openMenu(anchor, tidyItems([
+      it("f-size", "글자 크기"), it("f-italic", "기울임", "Ctrl+I"), it("f-under", "밑줄", "Ctrl+U"),
+      it("f-strike", "취소선", "Ctrl+Shift+S"), it("f-code", "코드", "Ctrl+E"), it("f-clear", "서식 지우기"),
+      "-", it("f-hr", "구분선", "---"), it("f-outdent", "내어쓰기", "Shift+Tab"), it("f-indent", "들여쓰기", "Tab"),
+      "-", it("f-time", "날짜·시간 넣기", "F5"), it("f-cal", "구글 캘린더에 추가"), it("f-help", "단축키·사용법", "F1"),
+    ]));
+  }
+  function memoMoreMenu(anchor) {
+    const m = memos.find((x) => x.id === currentId);
+    if (!m) return;
+    const inFolder = !$("btn-folder").hidden;
+    openMenu(anchor, tidyItems([
+      inFolder && { html: menuRow(menuIcon("btn-folder"), isSecret(m) ? "비밀 폴더" : m.folder ? `폴더: ${m.folder}` : "폴더로 옮기기"), onPick: () => folderMenu(anchor) },
+      { html: menuRow(menuIcon("btn-font"), "화면 글자 크기", ZOOM[fsIndex].n),
+        onPick: () => openMenu(anchor, ZOOM.map((z, i) => ({ label: z.n, checked: i === fsIndex, onPick: () => setZoom(i) }))) },
+      { html: menuRow(menuIcon("btn-present"), "발표 모드"), onPick: startPresent },
+      "-",
+      { html: menuRow(menuIcon("btn-delete"), "삭제"), danger: true, onPick: deleteCurrent },
+    ]));
+  }
+  function diaryMoreMenu(anchor) {
+    const g = $("cal-gcal"), lb = $("cal-lock");
+    openMenu(anchor, tidyItems([
+      !g.hidden && { html: menuRow(menuIcon("cal-gcal"), calShowing() ? "구글 캘린더 일정 (켜짐)" : "구글 캘린더 일정 보기"), onPick: () => calMenu(anchor) },
+      { html: menuRow(menuIcon("cal-lock"), lb.title || "일기 잠금"), onPick: () => diaryLockMenu(anchor) },
+    ]));
+  }
   function folderMenu(anchor) {
     const m = memos.find((x) => x.id === currentId);
     if (!m) return;
@@ -3724,6 +3789,15 @@
   $("cal-album").hidden = !canPhoto();
   $("cal-album").onclick = openAlbum;
   $("al-close").onclick = closeAlbum;
+  // Album options folded away by default, so the stamps get the room (remembered on this device).
+  const DECO_KEY = "cloudmemo.albumDeco";
+  function setDeco(open) {
+    $("album").querySelector(".sheet.album").classList.toggle("deco-open", open);
+    $("al-deco").setAttribute("aria-expanded", open ? "true" : "false");
+    lsSet(DECO_KEY, open);
+  }
+  setDeco(!!lsGet(DECO_KEY, false));
+  $("al-deco").onclick = () => setDeco($("al-deco").getAttribute("aria-expanded") !== "true");
   $("al-save").onclick = () => saveAlbum(false);
   $("al-save-gif").onclick = () => saveAlbum(true);
   $("al-prev").onclick = () => { albumMonth = new Date(albumMonth.getFullYear(), albumMonth.getMonth() - 1, 1); renderAlbum(); };
@@ -3777,6 +3851,9 @@
   });
   $("settings").addEventListener("change", (e) => { if (e.target.id === "set-pick") renderSettings(); });
   $("btn-delete").onclick = deleteCurrent;
+  $("btn-more").onclick = (e) => memoMoreMenu(e.currentTarget);
+  $("f-more").onclick = (e) => fmtMoreMenu(e.currentTarget);
+  $("cal-more").onclick = (e) => diaryMoreMenu(e.currentTarget);
   $("btn-pin").onclick = togglePin;
   $("btn-present").onclick = startPresent;
   $("btn-folder").onclick = (e) => folderMenu(e.currentTarget);
