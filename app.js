@@ -2377,7 +2377,8 @@
   $("tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-tab]"); if (b) setTab(b.dataset.tab); });
   $("cal-prev").onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderDiary(); };
   $("cal-next").onclick = () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderDiary(); };
-  $("cal-today").onclick = () => { const t = new Date(); calMonth = new Date(t.getFullYear(), t.getMonth(), 1); renderDiary(); };
+  // 오늘: back to this month and open today's entry (the diary tab has no + button).
+  $("cal-today").onclick = () => { const t = new Date(); calMonth = new Date(t.getFullYear(), t.getMonth(), 1); openDiary(ymd(t)); };
   $("cal-lock").onclick = (e) => diaryLockMenu(e.currentTarget);
   $("cal-gcal").onclick = (e) => calMenu(e.currentTarget);
   $("f-cal").onclick = addToCalendar;
